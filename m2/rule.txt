@@ -1,0 +1,74 @@
+// 1. Players with more than one position (and that can play as DEF)
+MATCH (p:Player)-[:PLAYS_AS]->(pos:Position)
+WITH p, collect(DISTINCT pos.name) AS positions
+WHERE size(positions) > 1 AND "DEF" IN positions
+
+// 2. Fixtures
+MATCH
+  (p)-[perf:PLAYED_IN]->
+  (fix:Fixture)<-[:HAS_FIXTURE]-
+  (gw:Gameweek)<-[:HAS_GW]-
+  (s:Season)
+
+// 3. Compute DEF score
+WITH
+  p, s, fix, perf,
+  CASE
+    WHEN coalesce(perf.minutes, 0) >= 60 THEN 2
+    WHEN coalesce(perf.minutes, 0) > 0 THEN 1
+    ELSE 0
+  END
+  + 6 * coalesce(perf.goals_scored, 0)
+  + 3 * coalesce(perf.assists, 0)
+  + coalesce(perf.bonus, 0)
+  + CASE
+      WHEN coalesce(perf.clean_sheets, 0) > 0
+           AND coalesce(perf.minutes, 0) >= 60
+      THEN 4
+      ELSE 0
+    END
+  + (-1) * floor(coalesce(perf.goals_conceded, 0) / 2.0)
+  + (-2) * coalesce(perf.penalties_missed, 0)
+  + (-2) * coalesce(perf.own_goals, 0)
+  + (-1) * coalesce(perf.yellow_cards, 0)
+  + (-3) * coalesce(perf.red_cards, 0)
+  AS def_score,
+  coalesce(perf.total_points, 0) AS total_points,
+  perf.position AS Pos1
+
+// 4. Match flag
+WITH
+  p, s, fix, def_score, total_points, Pos1,
+  (def_score = total_points OR NOT Pos1 = "DEF") AS matches_def
+
+// 5. Aggregate per player
+WITH
+  p,
+  count(*) AS total_fixtures,
+  sum(CASE WHEN matches_def THEN 0 ELSE 1 END) AS not_def_fixtures,
+  collect(
+    CASE
+      WHEN NOT matches_def THEN {
+        def_score: def_score,
+        season: s.season_name,
+        fixture_number: fix.fixture_number,
+        matches_def: matches_def,
+        total_points: total_points
+      }
+      ELSE null
+    END
+  ) AS raw_details
+
+WITH
+  p,
+  total_fixtures,
+  not_def_fixtures,
+  [d IN raw_details WHERE d IS NOT NULL] AS fixture_details
+WHERE size(fixture_details) > 0          // <-- filter out empty []
+
+RETURN
+  p.player_name AS player,
+  not_def_fixtures,
+  total_fixtures,
+  fixture_details
+ORDER BY not_def_fixtures DESC;
