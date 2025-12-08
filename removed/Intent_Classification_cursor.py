@@ -410,7 +410,7 @@ class IntentClassifier:
         
         # Extract team names
         for team in self.team_keywords:
-            if team in query:
+            if team.lower() in query.lower():
                 entities['teams'].append(team)
         
         # Extract seasons
@@ -558,7 +558,7 @@ if __name__ == "__main__":
     test_queries = [
         "How many points did Mohamed Salah score?",
         "Who are the top 10 players with most goals?",
-        "Show me fixtures for Arsenal",
+        "Show me fixtures for Manchester United",
         "What games are in gameweek 5?",
         "Which teams played in the 2022-23 season?",
         "Compare Mohamed Salah vs Erling Haaland",
