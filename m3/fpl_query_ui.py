@@ -11,21 +11,12 @@ import sys
 import os
 from pathlib import Path
 from test_cypher_generation import test_cypher_generation2
-
-
 # Add the Input Preprocessing directory to the path
 sys.path.append(str(Path(__file__).parent / "Input Preprocessing"))
 
-from intent_classification_chat import IntentClassifier, Intent
+from intent_classification_chat import IntentClassifier
 from graph_retrieval import GraphRetrieval
 import pandas as pd
-
-
-from huggingface_hub import InferenceClient
-from langchain_core.language_models.llms import LLM
-from pydantic import Field
-from typing import Any, Optional, List as TList  # rename to avoid clash with typing.List below
-import os
 
 def load_config():
     """Load Neo4j configuration from config file"""
@@ -305,7 +296,31 @@ def main():
             "Arsenal fixtures in gameweek 10",
             "Compare Mohamed Salah vs Erling Haaland",
             "Best defenders in 2022-23",
-            "Games in gameweek 5"
+            "Games in gameweek 5",
+            "Who are the top 10 defenders in the 2022-23 season?",
+            "Show me arsenal fixtures for gameweek 10 in 2022-23",
+            "What games are in gameweek 5 of 2022-23?",
+            "Compare Mohamed Salah vs Erling Haaland in 2022-23 in gameweek 10",
+            "Show me Erling Haaland's stats for gameweek 10 in 2022-23",
+            "How many points did Mohamed Salah score in 2022-23?",
+            "Who are the best defenders to pick in GW5?",
+            "Show me all fixtures for Arsenal",
+            "What games are in gameweek 5?",
+            "Which teams played in the 2022-23 season?",
+            "Compare Mohamed Salah vs Erling Haaland this season",
+            "Find players who play as defender",
+            "How many total gameweeks are there?",
+            "What is the highest points scored by a player?",
+            "Show me all players",
+            "List all teams",
+            "List all positions",
+            "List all seasons",
+            "List all gameweeks",
+            "List all fixtures",
+            "List all teams in 2022-23",
+            "List all fixtures in gameweek 5 in 2022-23",
+            "List all the player in arsenal",
+            "Top forwards in 2022-23",
         ]
         
         for example in example_queries:

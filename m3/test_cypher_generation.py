@@ -5,18 +5,15 @@ Test script to show Cypher query generation with entities
 from dotenv import load_dotenv
 from intent_classification_chat import IntentClassifier
 from graph_retrieval import GraphRetrieval
-from typing import Dict, List, Any
-
-from typing import List, Dict, Any
+from typing import Dict, List, Any, Optional
 from langchain_core.language_models.llms import LLM  # you already have this import
-
+import os
 from huggingface_hub import InferenceClient
-from langchain_core.language_models.llms import LLM
 from pydantic import Field
-from typing import Any, Optional, List
+
 
 load_dotenv()
-import os
+
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # Initialize Hugging Face client for Gemma
@@ -134,8 +131,6 @@ def test_cypher_generation(Queries: List[str]):
                     print(f"    Optional entities: {qinfo.get('optional_entities', [])}")
 
 
-
-
 def format_results_table(results: List[Dict[str, Any]]) -> str:
     """
     Format query results as a table.
@@ -216,7 +211,6 @@ def load_config(path="config.txt"):
         return {}
 
 
-from typing import List, Dict, Any
 
 def test_cypher_generation2(Queries: List[str]) -> List[Dict[str, Any]]:
     """
