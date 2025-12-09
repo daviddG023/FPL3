@@ -10,7 +10,7 @@ import streamlit as st
 import sys
 import os
 from pathlib import Path
-from test_cypher_generation import test_cypher_generation2
+from test_cypher_generation import test_cypher_generation
 # Add the Input Preprocessing directory to the path
 sys.path.append(str(Path(__file__).parent / "Input Preprocessing"))
 
@@ -328,19 +328,19 @@ def main():
                 st.session_state.current_query = example
                 st.rerun()
     
-    # Process query USING test_cypher_generation2
+    # Process query USING test_cypher_generation
     if submit_button and query:
         with st.spinner("Processing your query..."):
             try:
                 # Call your test function with a single-element list
-                summary_list = test_cypher_generation2([query])
+                summary_list = test_cypher_generation([query])
                 if not summary_list:
-                    result = {"error": "No result returned from test_cypher_generation2."}
+                    result = {"error": "No result returned from test_cypher_generation."}
                 else:
                     # We only sent one query, so take the first summary dict
                     result = summary_list[0]
             except Exception as e:
-                result = {"error": f"Error calling test_cypher_generation2: {e}"}
+                result = {"error": f"Error calling test_cypher_generation: {e}"}
             
             # Add to history
             if query not in st.session_state.query_history:
@@ -399,7 +399,7 @@ def main():
                 
                 with st.expander("View Cypher Query"):
                     st.code(result.get("cypher_query", "N/A"), language="cypher")
-                    # test_cypher_generation2 stores execution params in 'exec_params'
+                    # test_cypher_generation stores execution params in 'exec_params'
                     if result.get("exec_params"):
                         st.json(result["exec_params"])
             
@@ -433,7 +433,7 @@ def main():
                         st.info("No results returned from the knowledge graph.")
                 
                 with tab2:
-                    st.markdown("#### 🧠 Final LLM Answer (from test_cypher_generation2)")
+                    st.markdown("#### 🧠 Final LLM Answer (from test_cypher_generation)")
                     llm_answer = result.get("llm_answer")
                     if llm_answer:
                         st.success(llm_answer)

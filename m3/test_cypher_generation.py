@@ -212,7 +212,7 @@ def load_config(path="config.txt"):
 
 
 
-def test_cypher_generation2(Queries: List[str]) -> List[Dict[str, Any]]:
+def test_cypher_generation(Queries: List[str]) -> List[Dict[str, Any]]:
     """
     Test Cypher query generation and execution for various queries.
     
@@ -413,5 +413,5 @@ if __name__ == "__main__":
     ]
     
     # test_cypher_generation(test_queries)
-    test_cypher_generation2(test_queries)
+    test_cypher_generation(test_queries)
     # test_cypher_generation2()
