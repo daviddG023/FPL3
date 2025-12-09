@@ -7,7 +7,7 @@ from Graph_Retrieval2 import GraphRetrieval
 from typing import Dict, List, Any
 
 
-def test_cypher_generation():
+def test_cypher_generation(Queries: List[str]):
     """Test Cypher query generation for various queries"""
     
     classifier = IntentClassifier()
@@ -16,45 +16,11 @@ def test_cypher_generation():
     retrieval = GraphRetrieval.__new__(GraphRetrieval)
     retrieval.query_templates = retrieval._initialize_query_templates()
     
-    test_queries = [
-        "How many points did Mohamed Salah score in 2022-23?",
-        "Who are the top 10 defenders in the 2022-23 season?",
-        "Show me arsenal fixtures for gameweek 10 in 2022-23",
-        "What games are in gameweek 5 of 2022-23?",
-        "Compare Mohamed Salah vs Erling Haaland in 2022-23 in gameweek 10",
-        "Show me Erling Haaland's stats for gameweek 10 in 2022-23",
-    ]
-    test_queries_2 = [
-        "How many points did Mohamed Salah score in 2022-23?",
-        "Who are the best defenders to pick in GW5?",
-        "Show me all fixtures for Arsenal",
-        "What games are in gameweek 5?",
-        "Which teams played in the 2022-23 season?",
-        "Compare Mohamed Salah vs Erling Haaland this season",
-        "Find players who play as defender",
-        "How many total gameweeks are there?",
-        "What is the highest points scored by a player?",
-        "Show me all players",
-    ]
-    test_queries_3 = [
-        "List all teams",
-        "List all positions",
-        "List all seasons",
-        "List all gameweeks",
-        "List all fixtures",
-        "List all teams in 2022-23",
-        "List all fixtures in gameweek 5 in 2022-23",
-    ]
-    test_queries_4 = [
-        "List all the player in arsenal ",
-        # "Top forwards in 2022-23",
-    ]
-    
     print("=" * 100)
     print("Cypher Query Generation Test")
     print("=" * 100)
     
-    for query in test_queries_4:
+    for query in Queries:
         print(f"\n{'='*100}")
         print(f"Query: {query}")
         print(f"{'='*100}")
@@ -182,7 +148,7 @@ def load_config(path="config.txt"):
         return {}
 
 
-def test_cypher_generation2():
+def test_cypher_generation2(Queries: List[str]):
     """Test Cypher query generation and execution for various queries"""
     
     # Load config and initialize retrieval with actual connection
@@ -192,46 +158,11 @@ def test_cypher_generation2():
     database = "neo4j"
     retrieval = GraphRetrieval(uri, username, password, database)
     classifier = IntentClassifier()
-    
-    test_queries = [
-        "How many points did Mohamed Salah score in 2022-23?",
-        "Who are the top 10 defenders in the 2022-23 season?",
-        "Show me arsenal fixtures for gameweek 10 in 2022-23",
-        "What games are in gameweek 5 of 2022-23?",
-        "Compare Mohamed Salah vs Erling Haaland in 2022-23 in gameweek 10",
-        "Show me Erling Haaland's stats for gameweek 10 in 2022-23",
-    ]
-    test_queries_2 = [
-        "How many points did Mohamed Salah score in 2022-23?",
-        "Who are the best defenders to pick in GW5?",
-        "Show me all fixtures for Arsenal",
-        "What games are in gameweek 5?",
-        "Which teams played in the 2022-23 season?",
-        "Compare Mohamed Salah vs Erling Haaland this season",
-        "Find players who play as defender",
-        "How many total gameweeks are there?",
-        "What is the highest points scored by a player?",
-        "Show me all players",
-    ]
-    test_queries_3 = [
-        "List all teams",
-        "List all positions",
-        "List all seasons",
-        "List all gameweeks",
-        "List all fixtures",
-        "List all teams in 2022-23",
-        "List all fixtures in gameweek 5 in 2022-23",
-    ]
-    test_queries_4 = [
-        "List all the player in arsenal",
-        "Top forwards in 2022-23",
-    ]
-    
     print("=" * 100)
     print("Cypher Query Generation and Execution Test")
     print("=" * 100)
     
-    for query in test_queries_4:
+    for query in Queries:
         print(f"\n{'='*100}")
         print(f"Query: {query}")
         print(f"{'='*100}")
@@ -321,5 +252,39 @@ def test_cypher_generation2():
 
 
 if __name__ == "__main__":
-    # test_cypher_generation()
-    test_cypher_generation2()
+    test_queries = [
+        "How many points did Mohamed Salah score in 2022-23?",
+        "Who are the top 10 defenders in the 2022-23 season?",
+        "Show me arsenal fixtures for gameweek 10 in 2022-23",
+        "What games are in gameweek 5 of 2022-23?",
+        "Compare Mohamed Salah vs Erling Haaland in 2022-23 in gameweek 10",
+        "Show me Erling Haaland's stats for gameweek 10 in 2022-23",
+    ]
+    test_queries_2 = [
+        "How many points did Mohamed Salah score in 2022-23?",
+        "Who are the best defenders to pick in GW5?",
+        "Show me all fixtures for Arsenal",
+        "What games are in gameweek 5?",
+        "Which teams played in the 2022-23 season?",
+        "Compare Mohamed Salah vs Erling Haaland this season",
+        "Find players who play as defender",
+        "How many total gameweeks are there?",
+        "What is the highest points scored by a player?",
+        "Show me all players",
+    ]
+    test_queries_3 = [
+        "List all teams",
+        "List all positions",
+        "List all seasons",
+        "List all gameweeks",
+        "List all fixtures",
+        "List all teams in 2022-23",
+        "List all fixtures in gameweek 5 in 2022-23",
+    ]
+    test_queries_4 = [
+        "List all the player in arsenal",
+        "Top forwards in 2022-23",
+    ]
+    
+    test_cypher_generation(test_queries)
+    # test_cypher_generation2()
