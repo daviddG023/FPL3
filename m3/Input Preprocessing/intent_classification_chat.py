@@ -6,6 +6,7 @@ from enum import Enum
 class Intent(Enum):
     PLAYER_PERFORMANCE = "player_performance"
     PLAYER_RECOMMENDATION = "player_recommendation"
+    PLAYER_SEARCH = "player_search"
     TEAM_QUERY = "team_query"
     FIXTURE_QUERY = "fixture_query"
     GAMEWEEK_QUERY = "gameweek_query"
@@ -49,12 +50,12 @@ class IntentClassifier:
         }
 
         self.team_words = {
-            'team', 'teams', 'club', 'clubs', 'arsenal', 'chelsea', 'liverpool',
+            'arsenal', 'chelsea', 'liverpool',
             'manchester', 'city', 'united', 'tottenham', 'spurs', 'leicester',
             'brighton', 'crystal palace', 'everton', 'fulham', 'leeds', 'newcastle',
             'southampton', 'west ham', 'wolves', 'aston villa', 'brentford',
             'burnley', 'norwich', 'watford', 'sheffield', 'bournemouth'
-        }
+        }#'team', 'teams', 'club', 'clubs',
 
         self.fixture_words = {
             'fixture', 'fixtures', 'match', 'matches', 'game', 'games',
@@ -62,18 +63,18 @@ class IntentClassifier:
         }
 
         self.gameweek_words = {
-            'gameweek', 'game week', 'gw', 'week', 'round'
+            'gameweek', 'game week', 'gw', 'week', 'round','gameweeks'
         }
 
         self.season_words = {
-            "season", "seasons",
+            # "season", "seasons",
             "2021-22", "2022-23", "2023-24", "2024-25"
         }
 
         self.position_words = {
-            'position', 'positions', 'gk', 'goalkeeper', 'def', 'defender',
+            'gk', 'goalkeeper', 'def', 'defender',
             'mid', 'midfielder', 'fwd', 'forward', 'attacker'
-        }
+        }#'position', 'positions',
 
         self.stat_words = {
             "points", "point", "goals", "goal", "assists", "assist",
@@ -149,6 +150,7 @@ class IntentClassifier:
             "has_search_word": contains_any(self.search_words),
             "has_how_many": "how many" in q,
             "has_gw_number": bool(re.search(r"\b(gw|gameweek|game week)\s*(\d+)\b", q)),
+            "has_gameweek_domain": contains_any(self.gameweek_words),
         }
 
         return flags
@@ -218,7 +220,7 @@ class IntentClassifier:
         entities["seasons"] = re.findall(season_pattern, query)
 
         # ---------- GAMEWEEKS ----------
-        gw_pattern = r"\b(gw|gameweek|game week)\s*(\d+)\b"
+        gw_pattern = r"\b(gw|gameweek|gameweeks|game week)\s*(\d+)\b"
         entities["gameweeks"] = [
             m[1] for m in re.findall(gw_pattern, query, re.IGNORECASE)
         ]
@@ -265,10 +267,17 @@ class IntentClassifier:
         7. General stats
         8. Entity search / fallback
         """
+        q_lower = q.lower()
+        f["has_player_domain"] = any(word in q_lower for word in ["player", "players"])
+        # f["has_gameweek_domain"] = any(word in q_lower for word in ["gameweek", "gw", "game week", "gameweeks"])
+        # f["has_fixture_domain"] = any(word in q_lower for word in ["fixture", "fixtures", "match", "matches", "games"])
+        f["has_team_domain"]   = any(word in q_lower for word in ["team", "teams", "clubs","club"])
+        f["has_position_domain"] = any(word in q_lower for word in ["position", "positions"])
+        f["has_season_domain"] = any(word in q_lower for word in ["season", "seasons"])#"season", "seasons",
 
         has_player_name = len(entities["players"]) > 0
         has_team_name = len(entities["teams"]) > 0
-
+        has_gameweek_context = f["has_gameweek_word"] or f["has_gw_number"] or f["has_gameweek_domain"]
         # ======================================================
         # 1. HIGH-PRIORITY INTENTS — always override
         # ======================================================
@@ -296,64 +305,51 @@ class IntentClassifier:
             return Intent.PLAYER_PERFORMANCE
 
         # Position queries ("players who play as DEF")
-        if f["has_position_word"] or any(w in q for w in ["play as", "plays as", "playing as"]):
+        if f["has_position_word"] or any(w in q for w in ["play as", "plays as", "playing as"])or f["has_position_domain"]:
             return Intent.POSITION_QUERY
 
-        # ======================================================
-        # 3. TEAM + FIXTURES ⇒ treat as FIXTURE_QUERY
-        #    e.g. "Arsenal fixtures in GW10"
-        # ======================================================
 
-        if (has_team_name or f["has_team_word"]) and f["has_fixture_word"]:
-            # User clearly wants fixtures for that team, not a performance summary
+        if f["has_player_domain"]:
+            return Intent.PLAYER_SEARCH
+        # ======================================================
+        # 3. TEAM + FIXTURES ⇒ FIXTURE_QUERY
+        if (has_team_name or f["has_team_word"]) and (f["has_fixture_word"]):
             return Intent.FIXTURE_QUERY
 
-        # ======================================================
         # 4. TEAM INTENTS (no explicit fixtures)
-        # ======================================================
-
-        if has_team_name or f["has_team_word"]:
+        if has_team_name or f["has_team_word"] or f["has_team_domain"]:
             return Intent.TEAM_QUERY
 
-        # ======================================================
-        # 5. PURE FIXTURE INTENTS (no specific team)
-        # ======================================================
-
-        if f["has_fixture_word"]:
-            return Intent.FIXTURE_QUERY
-
-        # ======================================================
-        # 6. SEASON / GAMEWEEK INTENTS (non-player-specific)
-        # ======================================================
-
-        if f["has_season_word"] or entities["seasons"]:
-            return Intent.SEASON_QUERY
-
-        if f["has_gameweek_word"] or f["has_gw_number"]:
+        # 5. PURE GAMEWEEK INTENTS (no specific team / player)
+        #    e.g. "What games are in gameweek 5?",
+        #         "How many total gameweeks are there?"
+        if has_gameweek_context and not has_team_name and not f["has_team_word"] \
+        and not has_player_name and not f["has_player_word"]:
             return Intent.GAMEWEEK_QUERY
 
-        # ======================================================
-        # 7. GENERAL STATISTICS (league/team level)
-        # ======================================================
+        # 6. PURE FIXTURE INTENTS (no gameweek context)
+        if f["has_fixture_word"] and not has_gameweek_context:
+            return Intent.FIXTURE_QUERY
 
+        # 7. SEASON / GAMEWEEK INTENTS (generic)
+        if f["has_season_word"] or entities["seasons"] or f["has_season_domain"]:
+            return Intent.SEASON_QUERY
+
+        if has_gameweek_context or f["has_gameweek_domain"]:
+            return Intent.GAMEWEEK_QUERY
+
+        # 8. GENERAL STATISTICS
         if f["has_stat_word"] or f["has_aggregate_word"]:
             return Intent.STATISTICS_QUERY
 
-        # ======================================================
-        # 8. ENTITY SEARCH
-        # ======================================================
-
+        # 9–10. ENTITY_SEARCH / UNKNOWN as you had
         if f["has_search_word"]:
             return Intent.ENTITY_SEARCH
 
-        # ======================================================
-        # 9. FALLBACK — treat as entity search if players mentioned
-        # ======================================================
-
         if has_player_name or f["has_player_word"]:
             return Intent.ENTITY_SEARCH
+        return Intent.UNKNOWN      
 
-        return Intent.UNKNOWN
 
 
 if __name__ == "__main__":
@@ -371,16 +367,40 @@ if __name__ == "__main__":
         "What is the highest points scored by a player?",
         "Show me all players",
     ]
-
+    test_queries_2 = [
+        "How many points did Mohamed Salah score in 2022-23?",
+        "Who are the best defenders to pick in GW5?",
+        "Show me all fixtures for Arsenal",
+        "What games are in gameweek 5?",
+        "Which teams played in the 2022-23 season?",
+        "Compare Mohamed Salah vs Erling Haaland this season",
+        "Find players who play as defender",
+        "How many total gameweeks are there?",
+        "What is the highest points scored by a player?",
+        "Show me all players",
+    ]
+    test_queries_3 = [
+        "List all the players",
+        "List all teams",
+        "List all positions",
+        "List all seasons",
+        "List all gameweeks",
+        "List all fixtures",
+        "List all teams in 2022-23",
+        "List all fixtures in gameweek 5 in 2022-23",
+    ]
+    test_queries_4 = [
+        "List all the player in arsenal"
+    ]
     print("=" * 60)
     print("FPL Intent Classification Test")
     print("=" * 60)
 
-    for q in test_queries:
+    for q in test_queries_3:
         intent, meta = classifier.classify(q)
-        hints = classifier.get_cypher_hints(intent)
+        # hints = classifier.get_cypher_hints(intent)
         print(f"\nQuery: {q}")
         print(f"Intent: {intent.value}")
         print(f"Entities: {meta['entities']}")
-        print(f"Pattern:\n{hints['query_pattern']}")
+        # print(f"Pattern:\n{hints['query_pattern']}")
         print("-" * 60)
