@@ -10,7 +10,7 @@ import streamlit as st
 import sys
 import os
 from pathlib import Path
-from test_cypher_generation import test_cypher_generation
+from test_cypher_generation import test_cypher_generation, run_models_for_query
 # Add the Input Preprocessing directory to the path
 sys.path.append(str(Path(__file__).parent / "Input Preprocessing"))
 
@@ -254,6 +254,14 @@ def main():
             st.error("❌ Database Not Connected")
             if st.session_state.get('db_error'):
                 st.error(f"Error: {st.session_state.db_error}")
+
+        st.header("🤖 Model Selection")
+        model_choices = ["Gemma", "GPT-3.5", "GPT-4"]
+        selected_models = st.multiselect(
+            "Choose models to run",
+            model_choices,
+            default=["Gemma", "GPT-3.5", "GPT-4"],
+        )
         
         st.header("📝 Query History")
         if st.session_state.query_history:
@@ -330,117 +338,136 @@ def main():
     
     # Process query USING test_cypher_generation
     if submit_button and query:
-        with st.spinner("Processing your query..."):
-            try:
-                # Call your test function with a single-element list
-                summary_list = test_cypher_generation([query])
-                if not summary_list:
-                    result = {"error": "No result returned from test_cypher_generation."}
-                else:
-                    # We only sent one query, so take the first summary dict
-                    result = summary_list[0]
-            except Exception as e:
-                result = {"error": f"Error calling test_cypher_generation: {e}"}
-            
-            # Add to history
-            if query not in st.session_state.query_history:
-                st.session_state.query_history.append(query)
-            
-            # Display results
-            st.markdown("---")
-            st.subheader("📋 Query Analysis")
-            
-            col_intent, col_entities = st.columns(2)
-            
-            with col_intent:
-                st.markdown("**Detected Intent:**")
-                intent_emoji = {
-                    "player_performance": "👤",
-                    "player_recommendation": "⭐",
-                    "player_search": "🔍",
-                    "team_query": "🏆",
-                    "fixture_query": "📅",
-                    "gameweek_query": "📆",
-                    "season_query": "📊",
-                    "statistics_query": "📈",
-                    "comparison_query": "⚖️",
-                    "entity_search": "🔎",
-                    "position_query": "📍",
-                    "unknown": "❓"
-                }
-                intent_display = result.get("intent", "unknown")
-                emoji = intent_emoji.get(intent_display, "❓")
-                st.info(f"{emoji} **{str(intent_display).replace('_', ' ').title()}**")
-            
-            with col_entities:
-                st.markdown("**Extracted Entities:**")
-                entities = result.get("entities", {})
-                if entities:
-                    entity_text = []
-                    for key, values in entities.items():
-                        if values:
-                            # values is usually a list
-                            if isinstance(values, (list, tuple)):
-                                v_str = ", ".join(str(v) for v in values)
-                            else:
-                                v_str = str(values)
-                            entity_text.append(f"**{key.title()}:** {v_str}")
-                    if entity_text:
-                        st.info("\n".join(entity_text))
+        if not selected_models:
+            st.warning("Please select at least one model.")
+        else:
+            with st.spinner("Processing your query..."):
+                try:
+                    result = run_models_for_query(
+                        user_query=query,
+                        models_to_run=selected_models,
+                    )
+                except Exception as e:
+                    result = {"error": f"Error running models: {e}"}
+                # Add to history
+                if query not in st.session_state.query_history:
+                    st.session_state.query_history.append(query)
+                
+                # Display results
+                st.markdown("---")
+                st.subheader("📋 Query Analysis")
+                
+                col_intent, col_entities = st.columns(2)
+                
+                with col_intent:
+                    st.markdown("**Detected Intent:**")
+                    intent_emoji = {
+                        "player_performance": "👤",
+                        "player_recommendation": "⭐",
+                        "player_search": "🔍",
+                        "team_query": "🏆",
+                        "fixture_query": "📅",
+                        "gameweek_query": "📆",
+                        "season_query": "📊",
+                        "statistics_query": "📈",
+                        "comparison_query": "⚖️",
+                        "entity_search": "🔎",
+                        "position_query": "📍",
+                        "unknown": "❓"
+                    }
+                    intent_display = result.get("intent", "unknown")
+                    emoji = intent_emoji.get(intent_display, "❓")
+                    st.info(f"{emoji} **{str(intent_display).replace('_', ' ').title()}**")
+                
+                with col_entities:
+                    st.markdown("**Extracted Entities:**")
+                    entities = result.get("entities", {})
+                    if entities:
+                        entity_text = []
+                        for key, values in entities.items():
+                            if values:
+                                # values is usually a list
+                                if isinstance(values, (list, tuple)):
+                                    v_str = ", ".join(str(v) for v in values)
+                                else:
+                                    v_str = str(values)
+                                entity_text.append(f"**{key.title()}:** {v_str}")
+                        if entity_text:
+                            st.info("\n".join(entity_text))
+                        else:
+                            st.info("No entities extracted")
                     else:
                         st.info("No entities extracted")
-                else:
-                    st.info("No entities extracted")
-            
-            # Display query information
-            if result.get("query_name"):
+                
+                # Display query information
+                if result.get("query_name"):
+                    st.markdown("---")
+                    st.subheader("🔧 Query Details")
+                    
+                    with st.expander("View Cypher Query"):
+                        st.code(result.get("cypher_query", "N/A"), language="cypher")
+                        # test_cypher_generation stores execution params in 'exec_params'
+                        if result.get("exec_params"):
+                            st.json(result["exec_params"])
+
+
+                # Display results + model answers
                 st.markdown("---")
-                st.subheader("🔧 Query Details")
-                
-                with st.expander("View Cypher Query"):
-                    st.code(result.get("cypher_query", "N/A"), language="cypher")
-                    # test_cypher_generation stores execution params in 'exec_params'
-                    if result.get("exec_params"):
-                        st.json(result["exec_params"])
-            
-            # Display results + LLM answer
-            st.markdown("---")
-            st.subheader("📊 Results & LLM Answer")
-            
-            if result.get("error"):
-                st.error(f"❌ Error: {result['error']}")
-            elif result.get("raw_results"):
-                raw_results = result["raw_results"]
-                query_name = result.get("query_name", "results")
-                
-                tab1, tab2 = st.tabs(["KG Context (Raw Data)", "LLM Answer"])
-                
-                with tab1:
-                    st.markdown("#### 📂 KG-Retrieved Context")
-                    df = format_results_as_dataframe(raw_results)
-                    if not df.empty:
-                        st.dataframe(df, use_container_width=True, hide_index=True)
-                        
-                        # Download button
-                        csv = df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Results as CSV",
-                            data=csv,
-                            file_name=f"fpl_query_results_{query_name}.csv",
-                            mime="text/csv"
-                        )
-                    else:
-                        st.info("No results returned from the knowledge graph.")
-                
-                with tab2:
-                    st.markdown("#### 🧠 Final LLM Answer (from test_cypher_generation)")
-                    llm_answer = result.get("llm_answer")
-                    if llm_answer:
-                        st.success(llm_answer)
-                    else:
-                        st.info("No LLM answer available for this query.")
-            else:
-                st.warning("No results found for this query.")
+                st.subheader("📊 KG Results & LLM Comparison")
+
+                if result.get("error"):
+                    st.error(f"❌ Error: {result['error']}")
+                elif result.get("raw_results") is None:
+                    st.warning("No KG results for this query.")
+                else:
+                    raw_results = result.get("raw_results", [])
+                    query_name = result.get("query_name", "results")
+
+                    tab_ctx, tab_models = st.tabs(["KG Context (Raw Data)", "Model Answers"])
+
+                    with tab_ctx:
+                        st.markdown("#### 📂 KG-Retrieved Context")
+                        df = format_results_as_dataframe(raw_results)
+                        if not df.empty:
+                            st.dataframe(df, use_container_width=True, hide_index=True)
+                            csv = df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Results as CSV",
+                                data=csv,
+                                file_name=f"fpl_query_results_{query_name}.csv",
+                                mime="text/csv",
+                            )
+                        else:
+                            st.info("No results returned from the knowledge graph.")
+
+                    with tab_models:
+                        st.markdown("#### 🧠 LLM Answers (Same KG Context)")
+                        models = result.get("models", {})
+
+                        if not models:
+                            st.info("No model outputs available.")
+                        else:
+                            # one column per model
+                            cols = st.columns(len(models))
+                            for col, (model_name, info) in zip(cols, models.items()):
+                                with col:
+                                    st.markdown(f"**{model_name}**")
+                                    if "error" in info:
+                                        st.error(info["error"])
+                                        continue
+
+                                    st.markdown("**Answer:**")
+                                    st.write(info["answer"])
+
+                                    st.markdown("**Quantitative metrics:**")
+                                    st.write(f"- Response time: {info.get('response_time', 'N/A'):.3f} s"
+                                            if info.get("response_time") is not None
+                                            else "- Response time: N/A")
+                                    st.write(f"- Prompt tokens: {info.get('prompt_tokens', 'N/A')}")
+                                    st.write(f"- Completion tokens: {info.get('completion_tokens', 'N/A')}")
+                                    st.write(f"- Total tokens: {info.get('total_tokens', 'N/A')}")
+                                    st.write(f"- Estimated cost (USD): {info.get('cost_usd', 'N/A')}")
+
     
     elif submit_button and not query:
         st.warning("⚠️ Please enter a query first!")
