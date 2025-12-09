@@ -2,9 +2,77 @@
 Test script to show Cypher query generation with entities
 """
 
+from dotenv import load_dotenv
 from intent_classification_chat import IntentClassifier
-from Graph_Retrieval2 import GraphRetrieval
+from graph_retrieval import GraphRetrieval
 from typing import Dict, List, Any
+
+from typing import List, Dict, Any
+from langchain_core.language_models.llms import LLM  # you already have this import
+
+from huggingface_hub import InferenceClient
+from langchain_core.language_models.llms import LLM
+from pydantic import Field
+from typing import Any, Optional, List
+
+load_dotenv()
+import os
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+# Initialize Hugging Face client for Gemma
+client = InferenceClient(
+    model="google/gemma-2-2b-it",
+    token=HF_TOKEN,
+)
+
+class GemmaWrapper(LLM):
+    """Wrapper that lets LangChain call Gemma via HuggingFace Inference API."""
+    client: Any = Field(...)
+    max_tokens: int = 500
+
+    @property
+    def _llm_type(self) -> str:
+        return "gemma_hf_api"
+
+    def _call(self, prompt: str, stop: Optional[List[str]] = None):
+        response = self.client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=self.max_tokens,
+            temperature=0.2,
+        )
+        return response.choices[0].message["content"]
+
+# ✅ This is what your test_cypher_generation2() will use
+gemma_llm = GemmaWrapper(client=client)
+
+
+def explain_results_with_llm(user_query: str, table_str: str, llm: LLM) -> str:
+    """
+    Use the LLM (Gemma via GemmaWrapper) to answer the user's query
+    based on the query results table.
+    """
+    prompt = f"""
+You are a Fantasy Premier League (FPL) assistant.
+
+The user asked this question:
+\"\"\"{user_query}\"\"\"
+
+You have the following table of data that comes from Neo4j:
+
+{table_str}
+
+Instructions:
+- Use ONLY the information in the table to answer.
+- Answer clearly in good English.
+- If the table is empty or doesn't contain enough information, say that you
+  don't have the data to answer exactly.
+- Be concise but informative, and explain the key numbers in a friendly way.
+
+Now write your answer to the user:
+"""
+    # ✅ Use LangChain's invoke API instead of calling the object directly
+    answer = llm.invoke(prompt)
+    return answer
 
 
 def test_cypher_generation(Queries: List[str]):
@@ -148,8 +216,17 @@ def load_config(path="config.txt"):
         return {}
 
 
-def test_cypher_generation2(Queries: List[str]):
-    """Test Cypher query generation and execution for various queries"""
+from typing import List, Dict, Any
+
+def test_cypher_generation2(Queries: List[str]) -> List[Dict[str, Any]]:
+    """
+    Test Cypher query generation and execution for various queries.
+    
+    After executing each query, this function:
+      - formats the results as a table string
+      - sends (user_query + table) to the LLM (Gemma) to get a natural-language answer
+      - returns a list of dicts with everything useful
+    """
     
     # Load config and initialize retrieval with actual connection
     uri = "neo4j+s://6fe2fa9b.databases.neo4j.io"
@@ -158,6 +235,9 @@ def test_cypher_generation2(Queries: List[str]):
     database = "neo4j"
     retrieval = GraphRetrieval(uri, username, password, database)
     classifier = IntentClassifier()
+    
+    results_summary: List[Dict[str, Any]] = []
+    
     print("=" * 100)
     print("Cypher Query Generation and Execution Test")
     print("=" * 100)
@@ -207,17 +287,54 @@ def test_cypher_generation2(Queries: List[str]):
                     print(f"\n✅ Query executed successfully!")
                     print(f"📊 Results: {len(results)} record(s) found\n")
                     
-                    # Display results in table format
+                    # Format results as text table
                     if results:
-                        print(format_results_table(results))
+                        table_str = format_results_table(results)
+                        print(table_str)
                     else:
-                        print("No results returned.")
+                        table_str = "No results returned."
+                        print(table_str)
+
+                    # 🔥 Call LLM to explain the results in good English
+                    try:
+                        llm_answer = explain_results_with_llm(
+                            user_query=query,
+                            table_str=table_str,
+                            llm=gemma_llm,     # GemmaWrapper instance from your RAG code
+                        )
+                        print("\n🧠 LLM Answer:")
+                        print(llm_answer)
+                    except Exception as llm_err:
+                        llm_answer = f"Error calling LLM: {llm_err}"
+                        print(f"\n❌ {llm_answer}")
+
+                    # Store everything for external use (e.g., Streamlit)
+                    results_summary.append({
+                        "user_query": query,
+                        "intent": intent.value,
+                        "entities": entities,
+                        "query_name": query_name,
+                        "cypher_query": cypher_query,
+                        "exec_query_template": query_template,
+                        "exec_params": clean_params,
+                        "raw_results": results,
+                        "table_str": table_str,
+                        "llm_answer": llm_answer,
+                    })
                         
                 except Exception as exec_error:
                     print(f"\n❌ Error executing query: {exec_error}")
                     print(f"\nQuery Template:")
                     print(query_template[:500] + "..." if len(query_template) > 500 else query_template)
                     print(f"\nParameters: {exec_params}")
+
+                    results_summary.append({
+                        "user_query": query,
+                        "intent": intent.value,
+                        "entities": entities,
+                        "query_name": query_name,
+                        "error": str(exec_error),
+                    })
                     
             else:
                 print("\n❌ No suitable query template found!")
@@ -237,18 +354,33 @@ def test_cypher_generation2(Queries: List[str]):
                         print(f"  - {qname}: {qinfo.get('description', 'N/A')}")
                         print(f"    Required entities: {qinfo.get('required_entities', [])}")
                         print(f"    Optional entities: {qinfo.get('optional_entities', [])}")
+                
+                results_summary.append({
+                    "user_query": query,
+                    "intent": intent.value,
+                    "entities": entities,
+                    "query_name": None,
+                    "error": "No suitable query template found",
+                })
         
         except Exception as e:
             print(f"\n❌ Error processing query: {e}")
             import traceback
             traceback.print_exc()
+            
+            results_summary.append({
+                "user_query": query,
+                "error": str(e),
+            })
     
     # Close connection
     retrieval.close()
     print(f"\n{'='*100}")
     print("Test completed. Database connection closed.")
     print(f"{'='*100}")
-
+    
+    # ✅ Return structured data for further use
+    return results_summary
 
 
 if __name__ == "__main__":
@@ -286,5 +418,6 @@ if __name__ == "__main__":
         "Top forwards in 2022-23",
     ]
     
-    test_cypher_generation(test_queries)
+    # test_cypher_generation(test_queries)
+    test_cypher_generation2(test_queries)
     # test_cypher_generation2()

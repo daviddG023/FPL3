@@ -10,14 +10,22 @@ import streamlit as st
 import sys
 import os
 from pathlib import Path
+from test_cypher_generation import test_cypher_generation2
+
 
 # Add the Input Preprocessing directory to the path
 sys.path.append(str(Path(__file__).parent / "Input Preprocessing"))
 
 from intent_classification_chat import IntentClassifier, Intent
-from Graph_Retrieval import GraphRetrieval
+from graph_retrieval import GraphRetrieval
 import pandas as pd
 
+
+from huggingface_hub import InferenceClient
+from langchain_core.language_models.llms import LLM
+from pydantic import Field
+from typing import Any, Optional, List as TList  # rename to avoid clash with typing.List below
+import os
 
 def load_config():
     """Load Neo4j configuration from config file"""
@@ -173,7 +181,6 @@ def process_query(query: str) -> dict:
             "error": str(e)
         }
 
-
 def main():
     """Main Streamlit application"""
     
@@ -223,7 +230,7 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
-    # Initialize session state
+    # (You can still keep this if you like the status / history logic)
     initialize_session_state()
     
     # Header
@@ -249,6 +256,7 @@ def main():
         """)
         
         st.header("🔧 Status")
+        # This status is from your old config-based connection; optional now
         if st.session_state.get('db_connected', False):
             st.success("✅ Database Connected")
         else:
@@ -259,8 +267,10 @@ def main():
         st.header("📝 Query History")
         if st.session_state.query_history:
             for i, hist_query in enumerate(reversed(st.session_state.query_history[-5:])):
-                if st.button(f"Query {len(st.session_state.query_history) - i}: {hist_query[:30]}...", 
-                           key=f"hist_{i}"):
+                if st.button(
+                    f"Query {len(st.session_state.query_history) - i}: {hist_query[:30]}...", 
+                    key=f"hist_{i}"
+                ):
                     st.session_state.current_query = hist_query
         else:
             st.info("No queries yet")
@@ -303,10 +313,19 @@ def main():
                 st.session_state.current_query = example
                 st.rerun()
     
-    # Process query
+    # Process query USING test_cypher_generation2
     if submit_button and query:
         with st.spinner("Processing your query..."):
-            result = process_query(query)
+            try:
+                # Call your test function with a single-element list
+                summary_list = test_cypher_generation2([query])
+                if not summary_list:
+                    result = {"error": "No result returned from test_cypher_generation2."}
+                else:
+                    # We only sent one query, so take the first summary dict
+                    result = summary_list[0]
+            except Exception as e:
+                result = {"error": f"Error calling test_cypher_generation2: {e}"}
             
             # Add to history
             if query not in st.session_state.query_history:
@@ -336,7 +355,7 @@ def main():
                 }
                 intent_display = result.get("intent", "unknown")
                 emoji = intent_emoji.get(intent_display, "❓")
-                st.info(f"{emoji} **{intent_display.replace('_', ' ').title()}**")
+                st.info(f"{emoji} **{str(intent_display).replace('_', ' ').title()}**")
             
             with col_entities:
                 st.markdown("**Extracted Entities:**")
@@ -345,7 +364,12 @@ def main():
                     entity_text = []
                     for key, values in entities.items():
                         if values:
-                            entity_text.append(f"**{key.title()}:** {', '.join(str(v) for v in values)}")
+                            # values is usually a list
+                            if isinstance(values, (list, tuple)):
+                                v_str = ", ".join(str(v) for v in values)
+                            else:
+                                v_str = str(values)
+                            entity_text.append(f"**{key.title()}:** {v_str}")
                     if entity_text:
                         st.info("\n".join(entity_text))
                     else:
@@ -360,33 +384,46 @@ def main():
                 
                 with st.expander("View Cypher Query"):
                     st.code(result.get("cypher_query", "N/A"), language="cypher")
-                    if result.get("params"):
-                        st.json(result.get("params"))
+                    # test_cypher_generation2 stores execution params in 'exec_params'
+                    if result.get("exec_params"):
+                        st.json(result["exec_params"])
             
-            # Display results
+            # Display results + LLM answer
             st.markdown("---")
-            st.subheader("📊 Results")
+            st.subheader("📊 Results & LLM Answer")
             
             if result.get("error"):
                 st.error(f"❌ Error: {result['error']}")
-            elif result.get("results"):
-                results = result["results"]
+            elif result.get("raw_results"):
+                raw_results = result["raw_results"]
+                query_name = result.get("query_name", "results")
                 
-                # Display as DataFrame
-                df = format_results_as_dataframe(results)
-                if not df.empty:
-                    st.dataframe(df, use_container_width=True, hide_index=True)
-                    
-                    # Download button
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Results as CSV",
-                        data=csv,
-                        file_name=f"fpl_query_results_{result.get('query_name', 'results')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.info("No results returned")
+                tab1, tab2 = st.tabs(["KG Context (Raw Data)", "LLM Answer"])
+                
+                with tab1:
+                    st.markdown("#### 📂 KG-Retrieved Context")
+                    df = format_results_as_dataframe(raw_results)
+                    if not df.empty:
+                        st.dataframe(df, use_container_width=True, hide_index=True)
+                        
+                        # Download button
+                        csv = df.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Results as CSV",
+                            data=csv,
+                            file_name=f"fpl_query_results_{query_name}.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No results returned from the knowledge graph.")
+                
+                with tab2:
+                    st.markdown("#### 🧠 Final LLM Answer (from test_cypher_generation2)")
+                    llm_answer = result.get("llm_answer")
+                    if llm_answer:
+                        st.success(llm_answer)
+                    else:
+                        st.info("No LLM answer available for this query.")
             else:
                 st.warning("No results found for this query.")
     
