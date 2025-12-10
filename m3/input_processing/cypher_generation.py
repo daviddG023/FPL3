@@ -1,6 +1,13 @@
 """
 Test script to show Cypher query generation with entities
 """
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(ROOT))
+
 import time
 from dotenv import load_dotenv
 from openai import OpenAI
