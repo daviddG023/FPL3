@@ -11,7 +11,7 @@ import streamlit as st
 import sys
 import os
 from pathlib import Path
-from ..input_processing.test_cypher_generation import test_cypher_generation, run_models_for_query
+from ..input_processing.cypher_generation import test_cypher_generation, run_models_for_query
 # Add the Input Preprocessing directory to the path
 sys.path.append(str(Path(__file__).parent / "Input Preprocessing"))
 
