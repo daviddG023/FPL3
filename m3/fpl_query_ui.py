@@ -6,6 +6,7 @@ This Streamlit application provides a user-friendly interface for querying
 the FPL Knowledge Graph using natural language queries.
 """
 
+from fpl_feature_embeddings import init_player_gw_indexes, semantic_search_player_gw
 import streamlit as st
 import sys
 import os
@@ -98,6 +99,12 @@ def initialize_session_state():
     if 'classifier' not in st.session_state:
         st.session_state.classifier = IntentClassifier()
     
+    # if "emb_indexes" not in st.session_state:
+    #     st.session_state.emb_indexes = init_player_gw_indexes(
+    #         csv_path="fpl_two_seasons.csv",
+    #         faiss_dir="faiss_indexes_player_gw",
+    #     )
+    
     if 'retrieval' not in st.session_state:
         config = load_config()
         if config:
@@ -171,6 +178,8 @@ def process_query(query: str) -> dict:
             "results": [],
             "error": str(e)
         }
+    
+
 
 def main():
     """Main Streamlit application"""
