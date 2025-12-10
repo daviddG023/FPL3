@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]   # this is the m3 folder
 sys.path.append(str(ROOT))
 
 
-from embeddings.fpl_feature_embeddings import init_player_gw_indexes
+from embeddings.fpl_feature_embeddings import init_fpl_feature_indexes
 import streamlit as st
 import sys
 import os
@@ -107,7 +107,7 @@ def initialize_session_state():
         st.session_state.classifier = IntentClassifier()
     
     if "emb_indexes" not in st.session_state:
-        st.session_state.emb_indexes = init_player_gw_indexes(
+        st.session_state.emb_indexes = init_fpl_feature_indexes(
             csv_path="fpl_two_seasons.csv",
             faiss_dir="faiss_indexes_player_gw",
         )

@@ -11,7 +11,7 @@ __pycache__/
 venv/
 .env
 
-
+faiss_indexes_player_gw/
 # Ignore VSCode settings
 .vscode/
 

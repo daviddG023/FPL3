@@ -19,7 +19,8 @@ import os
 from huggingface_hub import InferenceClient
 from pydantic import Field
 
-from embeddings.fpl_feature_embeddings import semantic_search_player_gw
+from embeddings.fpl_feature_embeddings import semantic_search_fpl
+
 
 
 load_dotenv()
@@ -226,7 +227,7 @@ def run_models_for_query(
         # --- Embedding retrieval (per-row player-GW docs) ---
         embedding_rows: List[Dict[str, Any]] = []
         if use_embeddings:
-            hits = semantic_search_player_gw(
+            hits = semantic_search_fpl(
                 query=user_query,
                 model_key=emb_model_key,
                 indexes=emb_indexes,
