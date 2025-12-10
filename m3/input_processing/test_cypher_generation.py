@@ -5,239 +5,239 @@ import time
 from dotenv import load_dotenv
 from openai import OpenAI
 from intent_classification import IntentClassifier
-from graph_retrieval import GraphRetrieval
+from ..graph_retrieval_layer.graph_retrieval import GraphRetrieval
 from typing import Dict, List, Any, Optional
 from langchain_core.language_models.llms import LLM  # you already have this import
 import os
 from huggingface_hub import InferenceClient
 from pydantic import Field
 
-# load_dotenv()
+load_dotenv()
 
-# HF_TOKEN = os.getenv("HF_TOKEN")
-# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-
-# openai_client = OpenAI(api_key=OPENAI_API_KEY)
-
-# # Initialize Hugging Face client for Gemma
-# client = InferenceClient(
-#     model="google/gemma-2-2b-it",
-#     token=HF_TOKEN,
-# )
-
-# class GemmaWrapper(LLM):
-#     """Wrapper that lets LangChain call Gemma via HuggingFace Inference API."""
-#     client: Any = Field(...)
-#     max_tokens: int = 500
-
-#     @property
-#     def _llm_type(self) -> str:
-#         return "gemma_hf_api"
-
-#     def _call(self, prompt: str, stop: Optional[List[str]] = None):
-#         response = self.client.chat_completion(
-#             messages=[{"role": "user", "content": prompt}],
-#             max_tokens=self.max_tokens,
-#             temperature=0.2,
-#         )
-#         return response.choices[0].message["content"]
-
-# # ✅ This is what your test_cypher_generation2() will use
-# gemma_llm = GemmaWrapper(client=client)
-
-# # ---- OpenAI helpers (no LangChain wrapper needed) ----
-
-# OPENAI_PRICES_USD = {
-#     # adjust to whatever models you use and current prices
-#     "gpt-3.5-turbo": {"input": 0.0005 / 1000, "output": 0.0015 / 1000},
-#     "gpt-4o-mini":   {"input": 0.00015 / 1000, "output": 0.0006 / 1000},
-#     "gpt-4o":        {"input": 0.005 / 1000, "output": 0.015 / 1000},
-# }
-
-# def call_openai_model(model: str, prompt: str) -> Dict[str, Any]:
-#     """
-#     Call an OpenAI chat model and return text + usage + timing.
-#     """
-#     start = time.perf_counter()
-#     resp = openai_client.chat.completions.create(
-#         model=model,
-#         messages=[{"role": "user", "content": prompt}],
-#         temperature=0.2,
-#         max_tokens=500,
-#     )
-#     elapsed = time.perf_counter() - start
-
-#     msg = resp.choices[0].message.content
-#     usage = getattr(resp, "usage", None)
-
-#     prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
-#     completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
-#     total_tokens = getattr(usage, "total_tokens", None) if usage else None
-
-#     cost_usd = None
-#     if total_tokens is not None and model in OPENAI_PRICES_USD:
-#         prices = OPENAI_PRICES_USD[model]
-#         # rough split of input/output if we don't have them separately
-#         if prompt_tokens is None or completion_tokens is None:
-#             prompt_tokens = int(total_tokens * 0.6)
-#             completion_tokens = total_tokens - prompt_tokens
-#         cost_usd = (
-#             prompt_tokens * prices["input"]
-#             + completion_tokens * prices["output"]
-#         )
-
-#     return {
-#         "text": msg,
-#         "response_time": elapsed,
-#         "prompt_tokens": prompt_tokens,
-#         "completion_tokens": completion_tokens,
-#         "total_tokens": total_tokens,
-#         "cost_usd": cost_usd,
-#     }
+HF_TOKEN = os.getenv("HF_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-# def run_models_for_query(
-#     user_query: str,
-#     models_to_run: List[str],
-# ) -> Dict[str, Any]:
-#     """
-#     1. Classify intent & entities for user_query
-#     2. Generate + execute Cypher (GraphRetrieval)
-#     3. Build table_str from results
-#     4. Run all requested LLMs on (user_query + table_str)
-#     5. Return everything in one dict for Streamlit
-#     """
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-#     # --- Neo4j + intent ---
-#     uri = "neo4j+s://6fe2fa9b.databases.neo4j.io"
-#     username = "neo4j"
-#     password = "6VR8BRVu3AJPCP8QZio4ifSrdYoHb1eHPDGcVBmD0kc"
-#     database = "neo4j"
+# Initialize Hugging Face client for Gemma
+client = InferenceClient(
+    model="google/gemma-2-2b-it",
+    token=HF_TOKEN,
+)
 
-#     retrieval = GraphRetrieval(uri, username, password, database)
-#     classifier = IntentClassifier()
+class GemmaWrapper(LLM):
+    """Wrapper that lets LangChain call Gemma via HuggingFace Inference API."""
+    client: Any = Field(...)
+    max_tokens: int = 500
 
-#     try:
-#         intent, metadata = classifier.classify(user_query)
-#         entities = metadata["entities"]
-#         intent_str = intent.value.upper()
+    @property
+    def _llm_type(self) -> str:
+        return "gemma_hf_api"
 
-#         query_name, cypher_query, params = retrieval.generate_cypher_query(
-#             intent_str, entities
-#         )
+    def _call(self, prompt: str, stop: Optional[List[str]] = None):
+        response = self.client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=self.max_tokens,
+            temperature=0.2,
+        )
+        return response.choices[0].message["content"]
 
-#         if not query_name:
-#             return {
-#                 "user_query": user_query,
-#                 "intent": intent.value,
-#                 "entities": entities,
-#                 "error": "No suitable query template found",
-#             }
+# ✅ This is what your test_cypher_generation2() will use
+gemma_llm = GemmaWrapper(client=client)
 
-#         query_template, exec_params = retrieval.parameterize_query(
-#             query_name, entities
-#         )
-#         clean_params = {k: (None if v is None else v) for k, v in exec_params.items()}
-#         results = retrieval.execute_query(query_template, clean_params)
+# ---- OpenAI helpers (no LangChain wrapper needed) ----
 
-#         table_str = format_results_table(results) if results else "No results found."
+OPENAI_PRICES_USD = {
+    # adjust to whatever models you use and current prices
+    "gpt-3.5-turbo": {"input": 0.0005 / 1000, "output": 0.0015 / 1000},
+    "gpt-4o-mini":   {"input": 0.00015 / 1000, "output": 0.0006 / 1000},
+    "gpt-4o":        {"input": 0.005 / 1000, "output": 0.015 / 1000},
+}
 
-#         # --- Run all requested models on this table ---
-#         models_output: Dict[str, Any] = {}
+def call_openai_model(model: str, prompt: str) -> Dict[str, Any]:
+    """
+    Call an OpenAI chat model and return text + usage + timing.
+    """
+    start = time.perf_counter()
+    resp = openai_client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=500,
+    )
+    elapsed = time.perf_counter() - start
 
-#         # 1) Gemma
-#         if "Gemma" in models_to_run:
-#             start = time.perf_counter()
-#             try:
-#                 prompt = build_llm_prompt(user_query, table_str)
-#                 gemma_text = gemma_llm.invoke(prompt)
-#                 elapsed = time.perf_counter() - start
-#                 models_output["Gemma (google/gemma-2-2b-it)"] = {
-#                     "answer": gemma_text,
-#                     "response_time": elapsed,
-#                     "prompt_tokens": None,
-#                     "completion_tokens": None,
-#                     "total_tokens": None,
-#                     "cost_usd": None,
-#                 }
-#             except Exception as e:
-#                 models_output["Gemma (google/gemma-2-2b-it)"] = {
-#                     "error": str(e),
-#                 }
+    msg = resp.choices[0].message.content
+    usage = getattr(resp, "usage", None)
 
-#         # 2) GPT-3.5
-#         if "GPT-3.5" in models_to_run:
-#             try:
-#                 prompt = build_llm_prompt(user_query, table_str)
-#                 info = call_openai_model("gpt-3.5-turbo", prompt)
-#                 models_output["GPT-3.5 (gpt-3.5-turbo)"] = {
-#                     "answer": info["text"],
-#                     "response_time": info["response_time"],
-#                     "prompt_tokens": info["prompt_tokens"],
-#                     "completion_tokens": info["completion_tokens"],
-#                     "total_tokens": info["total_tokens"],
-#                     "cost_usd": info["cost_usd"],
-#                 }
-#             except Exception as e:
-#                 models_output["GPT-3.5 (gpt-3.5-turbo)"] = {"error": str(e)}
+    prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+    completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+    total_tokens = getattr(usage, "total_tokens", None) if usage else None
 
-#         # 3) GPT-4
-#         if "GPT-4" in models_to_run:
-#             try:
-#                 prompt = build_llm_prompt(user_query, table_str)
-#                 info = call_openai_model("gpt-4o", prompt)
-#                 models_output["GPT-4 (gpt-4o)"] = {
-#                     "answer": info["text"],
-#                     "response_time": info["response_time"],
-#                     "prompt_tokens": info["prompt_tokens"],
-#                     "completion_tokens": info["completion_tokens"],
-#                     "total_tokens": info["total_tokens"],
-#                     "cost_usd": info["cost_usd"],
-#                 }
-#             except Exception as e:
-#                 models_output["GPT-4 (gpt-4o)"] = {"error": str(e)}
+    cost_usd = None
+    if total_tokens is not None and model in OPENAI_PRICES_USD:
+        prices = OPENAI_PRICES_USD[model]
+        # rough split of input/output if we don't have them separately
+        if prompt_tokens is None or completion_tokens is None:
+            prompt_tokens = int(total_tokens * 0.6)
+            completion_tokens = total_tokens - prompt_tokens
+        cost_usd = (
+            prompt_tokens * prices["input"]
+            + completion_tokens * prices["output"]
+        )
 
-#         return {
-#             "user_query": user_query,
-#             "intent": intent.value,
-#             "entities": entities,
-#             "query_name": query_name,
-#             "cypher_query": cypher_query,
-#             "exec_params": clean_params,
-#             "raw_results": results,
-#             "table_str": table_str,
-#             "models": models_output,
-#         }
-
-#     finally:
-#         retrieval.close()
+    return {
+        "text": msg,
+        "response_time": elapsed,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "cost_usd": cost_usd,
+    }
 
 
-# def build_llm_prompt(user_query: str, table_str: str) -> str:
-#     return f"""
-# You are a Fantasy Premier League (FPL) assistant.
+def run_models_for_query(
+    user_query: str,
+    models_to_run: List[str],
+) -> Dict[str, Any]:
+    """
+    1. Classify intent & entities for user_query
+    2. Generate + execute Cypher (GraphRetrieval)
+    3. Build table_str from results
+    4. Run all requested LLMs on (user_query + table_str)
+    5. Return everything in one dict for Streamlit
+    """
 
-# The user asked this question:
-# \"\"\"{user_query}\"\"\"
+    # --- Neo4j + intent ---
+    uri = "neo4j+s://6fe2fa9b.databases.neo4j.io"
+    username = "neo4j"
+    password = "6VR8BRVu3AJPCP8QZio4ifSrdYoHb1eHPDGcVBmD0kc"
+    database = "neo4j"
 
-# You have the following table of data that comes from Neo4j:
+    retrieval = GraphRetrieval(uri, username, password, database)
+    classifier = IntentClassifier()
 
-# {table_str}
+    try:
+        intent, metadata = classifier.classify(user_query)
+        entities = metadata["entities"]
+        intent_str = intent.value.upper()
 
-# Instructions:
-# - Use ONLY the information in the table to answer.
-# - Answer clearly in good English.
-# - If the table is empty or doesn't contain enough information, say that you
-#   don't have the data to answer exactly.
-# - Be concise but informative, and explain the key numbers in a friendly way.
+        query_name, cypher_query, params = retrieval.generate_cypher_query(
+            intent_str, entities
+        )
 
-# Now write your answer to the user:
-# """
+        if not query_name:
+            return {
+                "user_query": user_query,
+                "intent": intent.value,
+                "entities": entities,
+                "error": "No suitable query template found",
+            }
 
-# def explain_results_with_llm(user_query: str, table_str: str, llm: LLM) -> str:
-#     prompt = build_llm_prompt(user_query, table_str)
-#     return llm.invoke(prompt)
+        query_template, exec_params = retrieval.parameterize_query(
+            query_name, entities
+        )
+        clean_params = {k: (None if v is None else v) for k, v in exec_params.items()}
+        results = retrieval.execute_query(query_template, clean_params)
+
+        table_str = format_results_table(results) if results else "No results found."
+
+        # --- Run all requested models on this table ---
+        models_output: Dict[str, Any] = {}
+
+        # 1) Gemma
+        if "Gemma" in models_to_run:
+            start = time.perf_counter()
+            try:
+                prompt = build_llm_prompt(user_query, table_str)
+                gemma_text = gemma_llm.invoke(prompt)
+                elapsed = time.perf_counter() - start
+                models_output["Gemma (google/gemma-2-2b-it)"] = {
+                    "answer": gemma_text,
+                    "response_time": elapsed,
+                    "prompt_tokens": None,
+                    "completion_tokens": None,
+                    "total_tokens": None,
+                    "cost_usd": None,
+                }
+            except Exception as e:
+                models_output["Gemma (google/gemma-2-2b-it)"] = {
+                    "error": str(e),
+                }
+
+        # 2) GPT-3.5
+        if "GPT-3.5" in models_to_run:
+            try:
+                prompt = build_llm_prompt(user_query, table_str)
+                info = call_openai_model("gpt-3.5-turbo", prompt)
+                models_output["GPT-3.5 (gpt-3.5-turbo)"] = {
+                    "answer": info["text"],
+                    "response_time": info["response_time"],
+                    "prompt_tokens": info["prompt_tokens"],
+                    "completion_tokens": info["completion_tokens"],
+                    "total_tokens": info["total_tokens"],
+                    "cost_usd": info["cost_usd"],
+                }
+            except Exception as e:
+                models_output["GPT-3.5 (gpt-3.5-turbo)"] = {"error": str(e)}
+
+        # 3) GPT-4
+        if "GPT-4" in models_to_run:
+            try:
+                prompt = build_llm_prompt(user_query, table_str)
+                info = call_openai_model("gpt-4o", prompt)
+                models_output["GPT-4 (gpt-4o)"] = {
+                    "answer": info["text"],
+                    "response_time": info["response_time"],
+                    "prompt_tokens": info["prompt_tokens"],
+                    "completion_tokens": info["completion_tokens"],
+                    "total_tokens": info["total_tokens"],
+                    "cost_usd": info["cost_usd"],
+                }
+            except Exception as e:
+                models_output["GPT-4 (gpt-4o)"] = {"error": str(e)}
+
+        return {
+            "user_query": user_query,
+            "intent": intent.value,
+            "entities": entities,
+            "query_name": query_name,
+            "cypher_query": cypher_query,
+            "exec_params": clean_params,
+            "raw_results": results,
+            "table_str": table_str,
+            "models": models_output,
+        }
+
+    finally:
+        retrieval.close()
+
+
+def build_llm_prompt(user_query: str, table_str: str) -> str:
+    return f"""
+You are a Fantasy Premier League (FPL) assistant.
+
+The user asked this question:
+\"\"\"{user_query}\"\"\"
+
+You have the following table of data that comes from Neo4j:
+
+{table_str}
+
+Instructions:
+- Use ONLY the information in the table to answer.
+- Answer clearly in good English.
+- If the table is empty or doesn't contain enough information, say that you
+  don't have the data to answer exactly.
+- Be concise but informative, and explain the key numbers in a friendly way.
+
+Now write your answer to the user:
+"""
+
+def explain_results_with_llm(user_query: str, table_str: str, llm: LLM) -> str:
+    prompt = build_llm_prompt(user_query, table_str)
+    return llm.invoke(prompt)
 
 
 

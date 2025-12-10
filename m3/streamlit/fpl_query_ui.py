@@ -6,17 +6,17 @@ This Streamlit application provides a user-friendly interface for querying
 the FPL Knowledge Graph using natural language queries.
 """
 
-from fpl_feature_embeddings import init_player_gw_indexes, semantic_search_player_gw
+from ..embeddings.fpl_feature_embeddings import init_player_gw_indexes, semantic_search_player_gw
 import streamlit as st
 import sys
 import os
 from pathlib import Path
-from test_cypher_generation import test_cypher_generation, run_models_for_query
+from ..input_processing.test_cypher_generation import test_cypher_generation, run_models_for_query
 # Add the Input Preprocessing directory to the path
 sys.path.append(str(Path(__file__).parent / "Input Preprocessing"))
 
-from intent_classification_chat import IntentClassifier
-from graph_retrieval import GraphRetrieval
+from ..input_processing.intent_classification import IntentClassifier
+from ..graph_retrieval_layer.graph_retrieval import GraphRetrieval
 import pandas as pd
 
 def load_config():
