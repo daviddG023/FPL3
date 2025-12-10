@@ -16,7 +16,6 @@ import faiss
 import pickle
 import os
 from typing import List, Dict, Tuple, Optional
-import json
 
 
 class FPLEmbeddingSystem:
