@@ -20,3 +20,8 @@ venv/
 
 # Ignore Mac system files
 .DS_Store
+
+# Ignore embedding/model artifacts
+m3/embeddings/
+m3/__pycache__/
+**/__pycache__/

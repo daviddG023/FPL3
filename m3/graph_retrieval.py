@@ -546,23 +546,97 @@ class GraphRetrieval:
                 "template": """
 
                     MATCH (p:Player)-[:PLAYED_IN]->(f:Fixture)
-                    MATCH (f)-[:HAS_HOME_TEAM|HAS_AWAY_TEAM]->(:Team {name: $team_name})
-                    WITH DISTINCT p
-
+                    MATCH (f)-[:HAS_HOME_TEAM|HAS_AWAY_TEAM]->(T:Team {name: $team_name})
+                    WITH DISTINCT p,T
+                    MATCH (gw:Gameweek)-[:HAS_FIXTURE]->(f)
+                    WHERE ($season IS NULL OR gw.season = $season)
+                    AND ($gw_number IS NULL OR gw.GW_number = $gw_number)
                     // Step 2: Exclude players who EVER appeared in a non-team_name team
-                    WHERE NOT EXISTS {
+                    AND NOT EXISTS {
                         MATCH (p)-[:PLAYED_IN]->(f2:Fixture)
                         MATCH (f2)-[:HAS_HOME_TEAM]->(home:Team)
                         MATCH (f2)-[:HAS_AWAY_TEAM]->(away:Team)
                         WHERE home.name <> $team_name AND away.name <> $team_name
                     }
 
-                    RETURN DISTINCT p.player_name AS player_name
+                    RETURN DISTINCT p.player_name AS player_name, T.name AS team_name, 
+                    gw.GW_number AS gameweek,gw.season AS season
                     ORDER BY player_name;
                 """,
                 "required_entities": ["teams"],
                 "optional_entities": ["seasons", "gameweeks"],
-            }
+            },
+            # Query 24 Average points per game for all players
+            "avg_points_per_game_all_players": {
+                "intent": "PLAYER_SEARCH",
+                "description": "Compute the average points per game across all players in the database",
+                "template": """
+                    MATCH (p:Player)-[r:PLAYED_IN]->(f:Fixture)
+                    WITH p,
+                        sum(r.points) AS totalPoints,
+                        count(f)      AS gamesPlayed
+                    WHERE gamesPlayed > 0
+                    RETURN avg(1.0 * totalPoints / gamesPlayed) AS avg_points_per_game;
+                """,
+                # as you said: both must be present
+                "required_entities": ["stat_ops", "stats"],
+                "optional_entities": []
+            },
+
+            #Query 25 Show overall stats for the 2022-23 season
+            "season_overall_stats": {
+                "intent": "SEASON_QUERY",
+                "description": "Show overall aggregated stats (points, goals, assists) for a given season",
+                "template": """
+                    MATCH (s:Season {season_name: $season})
+                        -[:HAS_GW]->(gw:Gameweek)
+                        -[:HAS_FIXTURE]->(f:Fixture)
+                    MATCH (p:Player)-[r:PLAYED_IN]->(f)
+                    RETURN 
+                        s.season_name AS season,
+                        sum(r.points)  AS total_points,
+                        sum(r.goals)   AS total_goals,
+                        sum(r.assists) AS total_assists;
+                """,
+                # needs a season, and we know it's an aggregate because stat_ops is present
+                "required_entities": ["seasons", "stat_ops"],
+                "optional_entities": ["stats"]
+            },
+
+            # Query 26 Which season had the most total goals?
+            "season_with_most_total_goals": {
+                "intent": "SEASON_QUERY",
+                "description": "Find the season with the highest total number of goals scored",
+                "template": """
+                    MATCH (s:Season)
+                        -[:HAS_GW]->(gw:Gameweek)
+                        -[:HAS_FIXTURE]->(f:Fixture)
+                    MATCH (p:Player)-[r:PLAYED_IN]->(f)
+                    WITH s, sum(r.goals) AS total_goals
+                    RETURN 
+                        s.season_name AS season,
+                        total_goals
+                    ORDER BY total_goals DESC
+                    LIMIT 1;
+                """,
+                # no specific season, but we *need* stat_ops + stats for this
+                "required_entities": ["stat_ops", "stats"],
+                "optional_entities": []
+            },
+            # Query 27 How many total gameweeks are there?
+            "total_gameweeks": {
+                "intent": "GAMEWEEK_QUERY",
+                "description": "Get total number of gameweeks",
+                "template": """
+                    MATCH (gw:Gameweek)-[:HAS_FIXTURE]->(f:Fixture)
+                    RETURN count(DISTINCT gw) as total_gameweeks
+                """,
+                "required_entities": ["stat_ops"],
+                "optional_entities": []
+            },
+
+
+
         }
     
     def select_query(self, intent: str, entities: Dict[str, List[str]]) -> Optional[str]:
