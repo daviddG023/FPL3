@@ -19,6 +19,9 @@ import os
 from huggingface_hub import InferenceClient
 from pydantic import Field
 
+from embeddings.fpl_feature_embeddings import semantic_search_player_gw
+
+
 load_dotenv()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -103,57 +106,156 @@ def call_openai_model(model: str, prompt: str) -> Dict[str, Any]:
         "cost_usd": cost_usd,
     }
 
+def _merge_and_dedup_rows(
+    baseline_rows: List[Dict[str, Any]],
+    emb_rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Merge baseline + embedding rows and remove duplicates.
+
+    For FPL we try to de-duplicate by (name, season, GW) when present.
+    Otherwise we fall back to stringifying the dict.
+    """
+    merged: List[Dict[str, Any]] = []
+    seen_keys = set()
+
+    def make_key(row: Dict[str, Any]):
+        if all(k in row for k in ("name", "season", "GW")):
+            return ("triple", str(row["name"]), str(row["season"]), str(row["GW"]))
+        return ("raw", repr(sorted(row.items())))
+
+    for r in baseline_rows + emb_rows:
+        key = make_key(r)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        merged.append(r)
+    return merged
+
 
 def run_models_for_query(
     user_query: str,
     models_to_run: List[str],
+    retrieval_method: str = "baseline",           # "baseline" | "embeddings" | "hybrid"
+    emb_model_key: Optional[str] = None,          # "minilm" | "mpnet"
+    emb_indexes: Optional[Dict[str, Any]] = None, # FAISS indexes dict from Streamlit
 ) -> Dict[str, Any]:
     """
     1. Classify intent & entities for user_query
-    2. Generate + execute Cypher (GraphRetrieval)
-    3. Build table_str from results
+    2. Depending on retrieval_method:
+         - baseline: run Cypher over Neo4j only
+         - embeddings: run semantic search over FAISS only
+         - hybrid: run both, then merge + de-dup rows
+    3. Build table_str from the *combined* context
     4. Run all requested LLMs on (user_query + table_str)
     5. Return everything in one dict for Streamlit
     """
 
-    # --- Neo4j + intent ---
-    uri = "neo4j+s://6fe2fa9b.databases.neo4j.io"
-    username = "neo4j"
-    password = "6VR8BRVu3AJPCP8QZio4ifSrdYoHb1eHPDGcVBmD0kc"
-    database = "neo4j"
+    retrieval_method = retrieval_method.lower().strip()
+    use_baseline = retrieval_method in ("baseline", "hybrid")
+    use_embeddings = retrieval_method in ("embeddings", "hybrid")
 
-    retrieval = GraphRetrieval(uri, username, password, database)
+    # Basic validation
+    if use_embeddings and (emb_indexes is None or not emb_indexes):
+        return {
+            "user_query": user_query,
+            "intent": "unknown",
+            "entities": {},
+            "error": "Embeddings retrieval requested but FAISS indexes are not initialized.",
+            "retrieval_method": retrieval_method,
+        }
+    if use_embeddings and not emb_model_key:
+        return {
+            "user_query": user_query,
+            "intent": "unknown",
+            "entities": {},
+            "error": "Embeddings retrieval requested but no embedding model was selected.",
+            "retrieval_method": retrieval_method,
+        }
+
+    # --- Intent classification (we always do this) ---
     classifier = IntentClassifier()
+    intent, metadata = classifier.classify(user_query)
+    entities = metadata.get("entities", {})
+    intent_str = intent.value.upper()
+
+    # Try to extract season / gameweek for optional embedding filtering
+    season_entity: Optional[str] = None
+    gw_entity: Optional[str] = None
+    for key in ("season", "seasons"):
+        if key in entities and entities[key]:
+            season_entity = str(entities[key][0])
+            break
+    for key in ("gameweek", "gw", "gameweeks"):
+        if key in entities and entities[key]:
+            gw_entity = str(entities[key][0])
+            break
+
+    # --- Baseline retrieval ---
+    baseline_results: List[Dict[str, Any]] = []
+    query_name: Optional[str] = None
+    cypher_query: Optional[str] = None
+    clean_params: Dict[str, Any] = {}
+
+    retrieval = None
+    if use_baseline:
+        uri = "neo4j+s://6fe2fa9b.databases.neo4j.io"
+        username = "neo4j"
+        password = "6VR8BRVu3AJPCP8QZio4ifSrdYoHb1eHPDGcVBmD0kc"
+        database = "neo4j"
+        retrieval = GraphRetrieval(uri, username, password, database)
 
     try:
-        intent, metadata = classifier.classify(user_query)
-        entities = metadata["entities"]
-        intent_str = intent.value.upper()
+        if use_baseline and retrieval is not None:
+            query_name, cypher_query, params = retrieval.generate_cypher_query(
+                intent_str, entities
+            )
 
-        query_name, cypher_query, params = retrieval.generate_cypher_query(
-            intent_str, entities
+            if query_name:
+                query_template, exec_params = retrieval.parameterize_query(
+                    query_name, entities
+                )
+                clean_params = {
+                    k: (None if v is None else v) for k, v in exec_params.items()
+                }
+                baseline_results = retrieval.execute_query(query_template, clean_params)
+            else:
+                # If baseline chosen but nothing matched, keep results empty
+                pass
+
+        # --- Embedding retrieval (per-row player-GW docs) ---
+        embedding_rows: List[Dict[str, Any]] = []
+        if use_embeddings:
+            hits = semantic_search_player_gw(
+                query=user_query,
+                model_key=emb_model_key,
+                indexes=emb_indexes,
+                top_k=10,
+                season=season_entity,
+                gw=gw_entity,
+            )
+            for doc, score in hits:
+                meta = doc.metadata or {}
+                row_dict = dict(meta)
+                row_dict["doc_text"] = doc.page_content
+                row_dict["similarity_score"] = float(score)
+                embedding_rows.append(row_dict)
+
+        # --- Merge context depending on method ---
+        if retrieval_method == "baseline":
+            combined_rows = list(baseline_results)
+        elif retrieval_method == "embeddings":
+            combined_rows = list(embedding_rows)
+        else:  # hybrid
+            combined_rows = _merge_and_dedup_rows(baseline_results, embedding_rows)
+
+        table_str = (
+            format_results_table(combined_rows) if combined_rows else "No results found."
         )
 
-        if not query_name:
-            return {
-                "user_query": user_query,
-                "intent": intent.value,
-                "entities": entities,
-                "error": "No suitable query template found",
-            }
-
-        query_template, exec_params = retrieval.parameterize_query(
-            query_name, entities
-        )
-        clean_params = {k: (None if v is None else v) for k, v in exec_params.items()}
-        results = retrieval.execute_query(query_template, clean_params)
-
-        table_str = format_results_table(results) if results else "No results found."
-
-        # --- Run all requested models on this table ---
+        # --- Run selected LLMs on the combined context ---
         models_output: Dict[str, Any] = {}
 
-        # 1) Gemma
         if "Gemma" in models_to_run:
             start = time.perf_counter()
             try:
@@ -169,11 +271,8 @@ def run_models_for_query(
                     "cost_usd": None,
                 }
             except Exception as e:
-                models_output["Gemma (google/gemma-2-2b-it)"] = {
-                    "error": str(e),
-                }
+                models_output["Gemma (google/gemma-2-2b-it)"] = {"error": str(e)}
 
-        # 2) GPT-3.5
         if "GPT-3.5" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
@@ -189,7 +288,6 @@ def run_models_for_query(
             except Exception as e:
                 models_output["GPT-3.5 (gpt-3.5-turbo)"] = {"error": str(e)}
 
-        # 3) GPT-4
         if "GPT-4" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
@@ -209,16 +307,20 @@ def run_models_for_query(
             "user_query": user_query,
             "intent": intent.value,
             "entities": entities,
+            "retrieval_method": retrieval_method,
             "query_name": query_name,
             "cypher_query": cypher_query,
-            "exec_params": clean_params,
-            "raw_results": results,
+            "exec_params": clean_params if use_baseline else {},
+            "baseline_results": baseline_results,
+            "embedding_results": embedding_rows,
+            "raw_results": combined_rows,
             "table_str": table_str,
             "models": models_output,
         }
 
     finally:
-        retrieval.close()
+        if retrieval is not None:
+            retrieval.close()
 
 
 def build_llm_prompt(user_query: str, table_str: str) -> str:
@@ -228,7 +330,9 @@ You are a Fantasy Premier League (FPL) assistant.
 The user asked this question:
 \"\"\"{user_query}\"\"\"
 
-You have the following table of data that comes from Neo4j:
+You have the following context table, coming from the FPL knowledge graph
+(baseline Cypher queries) and/or semantic embedding search over per-player
+gameweek rows:
 
 {table_str}
 
@@ -241,6 +345,7 @@ Instructions:
 
 Now write your answer to the user:
 """
+
 
 def explain_results_with_llm(user_query: str, table_str: str, llm: LLM) -> str:
     prompt = build_llm_prompt(user_query, table_str)
