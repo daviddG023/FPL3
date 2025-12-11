@@ -1,9 +1,6 @@
 # test_query_templates.py
 
 import pytest
-
-# 🔹 Import your real routing function here
-#    Change "query_router" and "select_query_template" to match your project.
 from cypher_generation import test_cypher_generation3
 
 
