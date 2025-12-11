@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]   # this is the m3 folder
 sys.path.append(str(ROOT))
 
 
-from embeddings.fpl_feature_embeddings import init_fpl_feature_indexes
+from embeddings.fpl_feature_embeddings import init_player_gw_indexes
 import streamlit as st
 import sys
 import os
@@ -298,11 +298,11 @@ def main():
             emb_model_key = "minilm" if emb_label.startswith("MiniLM") else "mpnet"
 
         st.header("🤖 LLM Model Selection")
-        model_choices = ["Gemma", "GPT-3.5", "GPT-4"]
+        model_choices = ["Gemma", "GPT-3.5", "GPT-4", "Gemini"]
         selected_models = st.multiselect(
             "Choose LLMs to run",
             model_choices,
-            default=["Gemma", "GPT-3.5", "GPT-4"],
+            default=["Gemma", "GPT-3.5", "GPT-4", "Gemini"],
         )
 
         st.header("📝 Query History")

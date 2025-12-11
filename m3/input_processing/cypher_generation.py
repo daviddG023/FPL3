@@ -18,8 +18,8 @@ from langchain_core.language_models.llms import LLM  # you already have this imp
 import os
 from huggingface_hub import InferenceClient
 from pydantic import Field
-
-from embeddings.fpl_feature_embeddings import semantic_search_fpl
+from embeddings.test_embedding import embed_query
+from google import genai
 
 
 
@@ -27,9 +27,11 @@ load_dotenv()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Initialize Hugging Face client for Gemma
 client = InferenceClient(
@@ -157,22 +159,22 @@ def run_models_for_query(
     use_embeddings = retrieval_method in ("embeddings", "hybrid")
 
     # Basic validation
-    if use_embeddings and (emb_indexes is None or not emb_indexes):
-        return {
-            "user_query": user_query,
-            "intent": "unknown",
-            "entities": {},
-            "error": "Embeddings retrieval requested but FAISS indexes are not initialized.",
-            "retrieval_method": retrieval_method,
-        }
-    if use_embeddings and not emb_model_key:
-        return {
-            "user_query": user_query,
-            "intent": "unknown",
-            "entities": {},
-            "error": "Embeddings retrieval requested but no embedding model was selected.",
-            "retrieval_method": retrieval_method,
-        }
+    # if use_embeddings and (emb_indexes is None or not emb_indexes):
+    #     return {
+    #         "user_query": user_query,
+    #         "intent": "unknown",
+    #         "entities": {},
+    #         "error": "Embeddings retrieval requested but FAISS indexes are not initialized.",
+    #         "retrieval_method": retrieval_method,
+    #     }
+    # if use_embeddings and not emb_model_key:
+    #     return {
+    #         "user_query": user_query,
+    #         "intent": "unknown",
+    #         "entities": {},
+    #         "error": "Embeddings retrieval requested but no embedding model was selected.",
+    #         "retrieval_method": retrieval_method,
+    #     }
 
     # --- Intent classification (we always do this) ---
     classifier = IntentClassifier()
@@ -227,20 +229,18 @@ def run_models_for_query(
         # --- Embedding retrieval (per-row player-GW docs) ---
         embedding_rows: List[Dict[str, Any]] = []
         if use_embeddings:
-            hits = semantic_search_fpl(
-                query=user_query,
-                model_key=emb_model_key,
-                indexes=emb_indexes,
-                top_k=10,
-                season=season_entity,
-                gw=gw_entity,
-            )
-            for doc, score in hits:
-                meta = doc.metadata or {}
-                row_dict = dict(meta)
-                row_dict["doc_text"] = doc.page_content
-                row_dict["similarity_score"] = float(score)
-                embedding_rows.append(row_dict)
+            if emb_model_key == "minilm":
+                emb_model_name = "all-MiniLM-L6-v2"
+                emb_embedding_dim = 384
+            elif emb_model_key == "mpnet":
+                emb_model_name = "all-mpnet-base-v2"
+                emb_embedding_dim = 768
+            else:
+                raise ValueError(f"Invalid embedding model key: {emb_model_key}")
+            hits = embed_query(query=user_query, model_name=emb_model_name, embedding_dim=emb_embedding_dim, top_k=10)
+            for result in hits:
+                meta = result['metadata']
+                embedding_rows.append(dict(meta))
 
         # --- Merge context depending on method ---
         if retrieval_method == "baseline":
@@ -303,7 +303,35 @@ def run_models_for_query(
                 }
             except Exception as e:
                 models_output["GPT-4 (gpt-4o)"] = {"error": str(e)}
+        
+        if "Gemini" in models_to_run:
+            try:
+                prompt = build_llm_prompt(user_query, table_str)
 
+                import time
+                start = time.time()
+
+                info = gemini_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                )
+
+                end = time.time()
+                response_time = round(end - start, 4)
+
+                models_output["Gemini (gemini-2.5-flash)"] = {
+                    "answer": info.text,
+                    "response_time": response_time,
+                    "prompt_tokens": None,
+                    "completion_tokens": None,
+                    "total_tokens": None,
+                    "cost_usd": None,
+                }
+
+            except Exception as e:
+                models_output["Gemini (gemini-2.5-flash)"] = {"error": str(e)}
+
+        
         return {
             "user_query": user_query,
             "intent": intent.value,
