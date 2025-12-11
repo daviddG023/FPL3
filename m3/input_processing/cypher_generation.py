@@ -20,6 +20,7 @@ from huggingface_hub import InferenceClient
 from pydantic import Field
 from embeddings.test_embedding import embed_query
 from google import genai
+import traceback
 
 
 
@@ -308,7 +309,6 @@ def run_models_for_query(
             try:
                 prompt = build_llm_prompt(user_query, table_str)
 
-                import time
                 start = time.time()
 
                 info = gemini_client.models.generate_content(
@@ -696,7 +696,6 @@ def test_cypher_generation(Queries: List[str]) -> List[Dict[str, Any]]:
         
         except Exception as e:
             print(f"\n❌ Error processing query: {e}")
-            import traceback
             traceback.print_exc()
             
             results_summary.append({

@@ -13,12 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]   # this is the m3 folder
 sys.path.append(str(ROOT))
 
 
-from embeddings.fpl_feature_embeddings import init_player_gw_indexes
 import streamlit as st
 import sys
 import os
 from pathlib import Path
-from input_processing.cypher_generation import test_cypher_generation, run_models_for_query
+from input_processing.cypher_generation import run_models_for_query
 # Add the Input Preprocessing directory to the path
 sys.path.append(str(Path(__file__).parent / "Input Preprocessing"))
 
@@ -106,11 +105,6 @@ def initialize_session_state():
     if 'classifier' not in st.session_state:
         st.session_state.classifier = IntentClassifier()
     
-    # if "emb_indexes" not in st.session_state:
-    #     st.session_state.emb_indexes = init_player_gw_indexes(
-    #         csv_path="fpl_two_seasons.csv",
-    #         faiss_dir="faiss_indexes_player_gw",
-    #     )
     
     if 'retrieval' not in st.session_state:
         config = load_config()
@@ -375,7 +369,6 @@ def main():
                         models_to_run=selected_models,
                         retrieval_method=retrieval_method,      # NEW
                         emb_model_key=emb_model_key,            # NEW
-                        emb_indexes=st.session_state.emb_indexes,  # NEW
                     )
                 except Exception as e:
                     result = {"error": f"Error running pipeline: {e}"}
