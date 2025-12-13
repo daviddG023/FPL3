@@ -2,7 +2,7 @@
 Quick test script for embedding system with small sample
 """
 
-from embeddings.embedding import FPLEmbeddingSystem
+from embedding import FPLEmbeddingSystem
 import os
 
 def embed_query(query: str, model_name: str, embedding_dim: int, top_k: int = 5):
@@ -71,14 +71,14 @@ def embed_query(query: str, model_name: str, embedding_dim: int, top_k: int = 5)
     for result in results:
         meta = result['metadata']
         # print(meta)
-        # print(f"\n  Rank {result['rank']} (Score: {result['similarity_score']:.4f}):")
-        # print(f"    Season: {meta.get('season')} - Player: {meta.get('name')} (position: {meta.get('position')})")
-        # print(f"    Points: {meta.get('total_points')}, Goals: {meta.get('goals_scored')}, Assists: {meta.get('assists')}")
-        # print(f"    Gameweek: {meta.get('GW')}, Fixture: {meta.get('fixture')}")
+        print(f"\n  Rank {result['rank']} (Score: {result['similarity_score']:.4f}):")
+        print(f"    Season: {meta.get('season')} - Player: {meta.get('name')} (position: {meta.get('position')})")
+        print(f"    Points: {meta.get('total_points')}, Goals: {meta.get('goals_scored')}, Assists: {meta.get('assists')}")
+        print(f"    Gameweek: {meta.get('GW')}, Fixture: {meta.get('fixture')}")
     
     print("\n✅ Test completed successfully!")
     return results
 if __name__ == "__main__":
-    print(embed_query(query="Season:2021-22, name:Aaron Connolly, pos:FWD, points:1", model_name="all-MiniLM-L6-v2", embedding_dim=384, top_k=5))
+    embed_query(query="Season:2021-22, name:Aaron Connolly, pos:FWD, points:1", model_name="all-MiniLM-L6-v2", embedding_dim=384, top_k=5)
     # embed_query(query="Season:2021-22, name:Aaron Connolly, pos:FWD, points:1", model_name="all-mpnet-base-v2", embedding_dim=768, top_k=5)
 
