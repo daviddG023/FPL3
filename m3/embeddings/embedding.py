@@ -53,108 +53,9 @@ class FPLEmbeddingSystem:
         self.faiss_index_path = os.path.join(self.model_folder, "fpl_faiss_index.bin")
         self.metadata_path = os.path.join(self.model_folder, "fpl_metadata.pkl")
     
+
+
     def row_to_text(self, row: pd.Series) -> str:
-        """
-        Convert a CSV row to a text description.
-        
-        Args:
-            row: pandas Series representing a row
-            
-        Returns:
-            Text description string
-        """
-        # Build text description from row
-        parts = []
-        
-        # Add key fields
-        if pd.notna(row.get('season')):
-            parts.append(f"Season:{row['season']}")
-        
-        if pd.notna(row.get('name')):
-            parts.append(f"name:{row['name']}")
-        
-        if pd.notna(row.get('position')):
-            parts.append(f"pos:{row['position']}")
-        
-        # Add performance stats
-        if pd.notna(row.get('total_points')):
-            parts.append(f"points:{row['total_points']}")
-        
-        if pd.notna(row.get('goals_scored')):
-            parts.append(f"goals:{row['goals_scored']}")
-        
-        if pd.notna(row.get('assists')):
-            parts.append(f"assists:{row['assists']}")
-        
-        if pd.notna(row.get('minutes')):
-            parts.append(f"minutes:{row['minutes']}")
-        
-        if pd.notna(row.get('clean_sheets')):
-            parts.append(f"clean_sheets:{row['clean_sheets']}")
-        
-        if pd.notna(row.get('bonus')):
-            parts.append(f"bonus:{row['bonus']}")
-        
-        if pd.notna(row.get('bps')):
-            parts.append(f"bps:{row['bps']}")
-        
-        # Add ICT stats
-        if pd.notna(row.get('ict_index')):
-            parts.append(f"ict_index:{row['ict_index']}")
-        
-        if pd.notna(row.get('influence')):
-            parts.append(f"influence:{row['influence']}")
-        
-        if pd.notna(row.get('creativity')):
-            parts.append(f"creativity:{row['creativity']}")
-        
-        if pd.notna(row.get('threat')):
-            parts.append(f"threat:{row['threat']}")
-        
-        if pd.notna(row.get('form')):
-            parts.append(f"form:{row['form']}")
-        
-        # Add fixture info
-        if pd.notna(row.get('fixture')):
-            parts.append(f"fixture:{row['fixture']}")
-        
-        if pd.notna(row.get('GW')):
-            parts.append(f"gameweek:{row['GW']}")
-        
-        if pd.notna(row.get('home_team')):
-            parts.append(f"home_team:{row['home_team']}")
-        
-        if pd.notna(row.get('away_team')):
-            parts.append(f"away_team:{row['away_team']}")
-        
-        if pd.notna(row.get('team_a_score')):
-            parts.append(f"away_score:{row['team_a_score']}")
-        
-        if pd.notna(row.get('team_h_score')):
-            parts.append(f"home_score:{row['team_h_score']}")
-        
-        # Add other relevant stats
-        if pd.notna(row.get('goals_conceded')):
-            parts.append(f"goals_conceded:{row['goals_conceded']}")
-        
-        if pd.notna(row.get('saves')):
-            parts.append(f"saves:{row['saves']}")
-        
-        if pd.notna(row.get('yellow_cards')):
-            parts.append(f"yellow_cards:{row['yellow_cards']}")
-        
-        if pd.notna(row.get('red_cards')):
-            parts.append(f"red_cards:{row['red_cards']}")
-        
-        if pd.notna(row.get('value')):
-            parts.append(f"value:{row['value']}")
-        
-        # Join all parts with commas
-        return ", ".join(parts)
-    
-
-
-    def row_to_text2(self, row: pd.Series) -> str:
         """
         Convert a single CSV row (one player in one fixture) into a natural-language
         description that is friendly for text embeddings.
@@ -302,7 +203,7 @@ class FPLEmbeddingSystem:
         
         for idx, row in df.iterrows():
             # Convert row to text
-            text = self.row_to_text2(row)
+            text = self.row_to_text(row)
             text_descriptions.append(text)
             
             # Store original row data as metadata
@@ -478,7 +379,7 @@ class FPLEmbeddingSystem:
             List of dictionaries containing metadata and similarity scores
         """
         # Convert example row to text
-        example_text = self.row_to_text2(pd.Series(example_row))
+        example_text = self.row_to_text(pd.Series(example_row))
         return self.retrieve(example_text, k)
 
 
