@@ -58,6 +58,7 @@ class GraphRetrieval:
         """
         return {
             # Query 1: Player Performance - Get specific player stats
+            #Query 1
             "player_performance_stats": {
                 "intent": "PLAYER_PERFORMANCE",
                 "description": "Get performance statistics for a specific player",
@@ -85,6 +86,7 @@ class GraphRetrieval:
 
             
             # Query 2: Player Performance by Gameweek
+            #Query 1 b
             "player_performance_by_gw": {
                 "intent": "PLAYER_PERFORMANCE",
                 "description": "Get player performance for a specific gameweek",
@@ -113,6 +115,7 @@ class GraphRetrieval:
             },
             
             # Query 3: Top Players by Position
+            #Query 2a
             "top_players_by_position": {
                 "intent": "PLAYER_RECOMMENDATION",
                 "description": "Get top players by position",
@@ -151,6 +154,7 @@ class GraphRetrieval:
             },
             
             # Query 4: Top Players Overall (All Positions)
+            #Query 2b
             "top_players_overall": {
                 "intent": "PLAYER_RECOMMENDATION",
                 "description": "Get top players overall by total points",
@@ -177,8 +181,39 @@ class GraphRetrieval:
                 "optional_entities": [],
                 "default_params": {"limit": 10}
             },
+
+            #Query 2c
+            "top_players_by_gameweek": {
+                "intent": "PLAYER_RECOMMENDATION",
+                "description": "Get top players by gameweek by total points",
+                "template": """
+                    MATCH (p:Player)-[r:PLAYED_IN]->(f:Fixture)
+                    WHERE coalesce($season, f.season) = f.season
+                    MATCH (gw:Gameweek)-[:HAS_FIXTURE]->(f)
+                    WHERE ($season IS NULL OR gw.season = $season)
+                    AND ($gw_number IS NULL OR gw.GW_number = $gw_number)
+                    WITH p, gw,
+                         sum(r.total_points) as total_points,
+                         sum(r.goals_scored) as total_goals,
+                         sum(r.assists) as total_assists,
+                         count(r) as appearances
+                    WHERE appearances > 0
+                    RETURN p.player_name as player_name,
+                           gw.GW_number as gameweek,
+                           total_points,
+                           total_goals,
+                           total_assists,
+                           appearances
+                    ORDER BY total_points DESC
+                    LIMIT $limit
+                """,
+                "required_entities": [],
+                "optional_entities": ["gameweeks","seasons"],
+                "default_params": {"limit": 10}
+            },
             
             # Query 5: Team Fixtures
+            #Query 3
             "team_fixtures": {
                 "intent": "FIXTURE_QUERY",
                 "description": "Get all fixtures for a specific team",
@@ -203,6 +238,7 @@ class GraphRetrieval:
             },
             
             # Query 5b: Gameweek Fixtures (when gameweek is specified but no team)
+            #Query 3b
             "gameweek_fixtures_simple": {
                 "intent": "FIXTURE_QUERY",
                 "description": "Get all fixtures in a gameweek",
@@ -225,6 +261,7 @@ class GraphRetrieval:
             },
             
             # Query 6: Gameweek Fixtures
+            #Query 3c
             "gameweek_fixtures": {
                 "intent": "GAMEWEEK_QUERY",
                 "description": "Get all fixtures in a specific gameweek",
@@ -248,6 +285,7 @@ class GraphRetrieval:
             },
             
             # Query 7: Teams in Season
+            #Query 4
             "teams_in_season": {
                 "intent": "SEASON_QUERY",
                 "description": "Get all teams that played in a season",
@@ -264,6 +302,7 @@ class GraphRetrieval:
             },
             
             # Query 7b: Total Gameweeks
+            #Query 5
             "total_gameweeks": {
                 "intent": "STATISTICS_QUERY",
                 "description": "Get total number of gameweeks",
@@ -278,6 +317,7 @@ class GraphRetrieval:
             },
             
             # Query 7c: Highest Points by Player
+            #Query 6
             "highest_points_player": {
                 "intent": "PLAYER_RECOMMENDATION",
                 "description": "Get player with highest points",
@@ -299,6 +339,7 @@ class GraphRetrieval:
             },
             
             # Query 8: Player Comparison
+            #Query 7
             "player_comparison": {
                 "intent": "COMPARISON_QUERY",
                 "description": "Compare statistics between multiple players",
@@ -335,6 +376,7 @@ class GraphRetrieval:
             },
 
             # Query 9: Players by Position
+            #Query 2c
             "players_by_position": {
                 "intent": "POSITION_QUERY",
                 "description": "Get all players who play in a specific position",
@@ -358,6 +400,7 @@ class GraphRetrieval:
             
             
             # Query 11: Statistics - Top Scorers
+            #Query 8
             "top_scorers": {
                 "intent": "STATISTICS_QUERY",
                 "description": "Get top goal scorers",
@@ -381,6 +424,7 @@ class GraphRetrieval:
             },
             
             # Query 12: Statistics - Most Assists
+            #Query 8b
             "top_assists": {
                 "intent": "STATISTICS_QUERY",
                 "description": "Get players with most assists",
@@ -404,6 +448,7 @@ class GraphRetrieval:
             },
             
             # Query 13: Entity Search - Search Players by Name
+            #Query 9
             "search_players": {
                 "intent": "ENTITY_SEARCH",
                 "description": "Search for players by name (partial match)",
@@ -419,6 +464,7 @@ class GraphRetrieval:
             },
             
             # Query 14: Team Analysis - Team Performance Stats
+            #Query 10
             "team_performance": {
                 "intent": "TEAM_QUERY",
                 "description": "Get team performance statistics",
@@ -448,6 +494,7 @@ class GraphRetrieval:
                 "optional_entities": ["seasons", "gameweeks"]
             },
             # Query 15 List all players
+            #Query 11
             "all_players_list": {
                 "intent": "PLAYER_SEARCH",
                 "description": "List all players",
@@ -463,6 +510,7 @@ class GraphRetrieval:
                 "default_params": {"limit": 200}
             },
             # Query 16 List all teams
+            #Query 11b
             "all_teams_list": {
                 "intent": "TEAM_QUERY",
                 "description": "List all teams",
@@ -474,6 +522,7 @@ class GraphRetrieval:
                 "optional_entities": [],
             },
             # Query 17 List all positions
+            #Query 11c
             "all_positions_list": {
                 "intent": "POSITION_QUERY",
                 "description": "List all positions",
@@ -485,6 +534,7 @@ class GraphRetrieval:
                 "optional_entities": [],
             },
             # Query 18 List all seasons
+            #Query 11d
             "all_seasons_list": {
                 "intent": "SEASON_QUERY",
                 "description": "List all seasons",
@@ -496,6 +546,7 @@ class GraphRetrieval:
                 "optional_entities": [],
             },
             # Query 19 List all gameweeks
+            #Query 11e
             "all_gameweeks_list": {
                 "intent": "GAMEWEEK_QUERY",
                 "description": "List all gameweeks",
@@ -507,6 +558,7 @@ class GraphRetrieval:
                 "optional_entities": [],
             },
             # Query 20 List all fixtures
+            #Query 11f
             "all_fixtures_list": {
                 "intent": "FIXTURE_QUERY",
                 "description": "List all fixtures",
@@ -518,6 +570,7 @@ class GraphRetrieval:
                 "optional_entities": [],
             },
             # Query 21 List all teams in a season
+            #Query 12
             "teams_in_season": {
                 "intent": "TEAM_QUERY",
                 "description": "List all teams in a season",
@@ -529,6 +582,7 @@ class GraphRetrieval:
                 "optional_entities": [],
             },
             # Query 22 List all fixtures in a gameweek
+            #Query 3c
             "fixtures_in_gameweek": {
                 "intent": "GAMEWEEK_QUERY",
                 "description": "List all fixtures in a gameweek",
@@ -540,6 +594,7 @@ class GraphRetrieval:
                 "optional_entities": [],
             },
             # Query 23 List all players in a team
+            #Query 13
             "players_in_team": {
                 "intent": "PLAYER_SEARCH",
                 "description": "List all players in a team",
@@ -567,6 +622,7 @@ class GraphRetrieval:
                 "optional_entities": ["seasons", "gameweeks"],
             },
             # Query 24 Average points per game for all players
+            #Query 14
             "avg_points_per_game_all_players": {
                 "intent": "PLAYER_SEARCH",
                 "description": "Compute the average points per game across all players in the database",
@@ -584,6 +640,7 @@ class GraphRetrieval:
             },
 
             #Query 25 Show overall stats for the 2022-23 season
+            #Query 15
             "season_overall_stats": {
                 "intent": "SEASON_QUERY",
                 "description": "Show overall aggregated stats (points, goals, assists) for a given season",
@@ -604,6 +661,7 @@ class GraphRetrieval:
             },
 
             # Query 26 Which season had the most total goals?
+            #Query 16
             "season_with_most_total_goals": {
                 "intent": "SEASON_QUERY",
                 "description": "Find the season with the highest total number of goals scored",
@@ -624,6 +682,7 @@ class GraphRetrieval:
                 "optional_entities": []
             },
             # Query 27 How many total gameweeks are there?
+            #Query 17
             "total_gameweeks": {
                 "intent": "GAMEWEEK_QUERY",
                 "description": "Get total number of gameweeks",
@@ -639,6 +698,8 @@ class GraphRetrieval:
 
         }
     
+
+
     def select_query(self, intent: str, entities: Dict[str, List[str]]) -> Optional[str]:
         """
         Select the most appropriate query template based on intent and available entities.
@@ -746,7 +807,7 @@ class GraphRetrieval:
             params["season"] = None
             params["season_name"] = None
         
-        if "gameweeks" in entities and len(entities["gameweeks"]) > 0:
+        if has_gameweek:
             params["gw_number"] = int(entities["gameweeks"][0])  # Use first gameweek
         else:
             params["gw_number"] = None

@@ -230,6 +230,8 @@ class FPLEmbeddingSystem:
         minutes = row.get("minutes")
         if pd.notna(minutes) and int(minutes) > 0:
             stats_phrases.append(f"played {int(minutes)} minutes")
+        else:
+            stats_phrases.append(f"did not play any minutes")
 
         add_int_stat("goals_scored", "scored {n} goal" + ("s" if row.get("goals_scored", 0) != 1 else ""))
         add_int_stat("assists", "provided {n} assist" + ("s" if row.get("assists", 0) != 1 else ""))
@@ -239,6 +241,8 @@ class FPLEmbeddingSystem:
         # Saves -> only if goalkeeper
         if pos_upper in ("GK", "GKP", "GOALKEEPER"):
             add_int_stat("saves", "made {n} save" + ("s" if row.get("saves", 0) != 1 else ""))
+        else:
+            stats_phrases.append(f"did not make any saves")
 
         add_int_stat("bonus", "earned {n} bonus point" + ("s" if row.get("bonus", 0) != 1 else ""))
         add_int_stat("total_points", "returned {n} FPL point" + ("s" if row.get("total_points", 0) != 1 else ""))
@@ -298,7 +302,7 @@ class FPLEmbeddingSystem:
         
         for idx, row in df.iterrows():
             # Convert row to text
-            text = self.row_to_text(row)
+            text = self.row_to_text2(row)
             text_descriptions.append(text)
             
             # Store original row data as metadata
@@ -474,7 +478,7 @@ class FPLEmbeddingSystem:
             List of dictionaries containing metadata and similarity scores
         """
         # Convert example row to text
-        example_text = self.row_to_text(pd.Series(example_row))
+        example_text = self.row_to_text2(pd.Series(example_row))
         return self.retrieve(example_text, k)
 
 

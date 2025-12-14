@@ -1,7 +1,10 @@
 import re
 from typing import Dict, List, Tuple, Optional
 from enum import Enum
-
+from pathlib import Path
+import pandas as pd
+import spacy
+from spacy.pipeline import EntityRuler
 
 class Intent(Enum):
     PLAYER_PERFORMANCE = "player_performance"
@@ -40,7 +43,7 @@ class IntentClassifier:
       (Player)-[:PLAYED_IN]->(Fixture {stats...})
     """
 
-    def __init__(self):
+    def __init__(self, use_spacy_ner: bool = True):
         # --- keyword groups ---
 
         # these are mostly for detecting entity type
@@ -48,6 +51,14 @@ class IntentClassifier:
             'forward', 'midfielder',
             'defender', 'goalkeeper', 'gk', 'def', 'mid', 'fwd'
         }
+        
+        # Initialize spaCy NER if requested
+        self.use_spacy_ner = use_spacy_ner
+        self.nlp = None
+        self.last_name_to_full = {}
+        
+        if use_spacy_ner:
+            self._initialize_spacy_ner()
 
         self.team_words = {
             'arsenal', 'chelsea', 'liverpool',
@@ -110,6 +121,124 @@ class IntentClassifier:
         self.search_words = {
             "find", "search", "show", "list", "get", "display"
         }
+    
+    def _initialize_spacy_ner(self):
+        """Initialize spaCy model and load FPL entity data once."""
+        try:
+            # Load spaCy model
+            self.nlp = spacy.load("en_core_web_sm")
+            
+            # Find CSV file path (try multiple locations)
+            csv_paths = [
+                Path(__file__).parent.parent.parent / "fpl_two_seasons.csv",  # From m3/input_processing to project root
+                Path("fpl_two_seasons.csv"),  # Current directory
+                Path(__file__).parent.parent / "embeddings" / "fpl_two_seasons.csv",  # In embeddings folder
+            ]
+            
+            csv_path = None
+            for path in csv_paths:
+                if path.exists():
+                    csv_path = path
+                    break
+            
+            if csv_path is None:
+                print("Warning: fpl_two_seasons.csv not found. spaCy NER will use limited entity recognition.")
+                return
+            
+            # Load FPL data to extract player and team names
+            df = pd.read_csv(csv_path)
+            
+            # Extract unique player names
+            player_names = sorted(df['name'].dropna().unique().tolist())
+            
+            # Extract unique team names (from both home_team and away_team columns)
+            home_teams = df['home_team'].dropna().unique().tolist()
+            away_teams = df['away_team'].dropna().unique().tolist()
+            team_names = sorted(list(set(home_teams + away_teams)))
+            
+            # Create a mapping of last names to full names for partial matching
+            # e.g., "Haaland" -> "Erling Haaland"
+            for name in player_names:
+                parts = name.split()
+                if len(parts) >= 2:
+                    last_name = parts[-1]
+                    if last_name not in self.last_name_to_full:
+                        self.last_name_to_full[last_name] = []
+                    self.last_name_to_full[last_name].append(name)
+            
+            # Add ruler BEFORE ner so it has priority
+            if "entity_ruler" not in self.nlp.pipe_names:
+                ruler = self.nlp.add_pipe("entity_ruler", before="ner", config={"overwrite_ents": True})
+            else:
+                ruler = self.nlp.get_pipe("entity_ruler")
+            
+            # Position patterns
+            position_patterns = [
+                {"label": "POSITION", "pattern": [{"LOWER": {"IN": ["gk", "goalkeeper", "goalkeepers"]}}]},
+                {"label": "POSITION", "pattern": [{"LOWER": {"IN": ["def", "defender", "defenders"]}}]},
+                {"label": "POSITION", "pattern": [{"LOWER": {"IN": ["mid", "midfielder", "midfielders"]}}]},
+                {"label": "POSITION", "pattern": [{"LOWER": {"IN": ["fwd", "forward", "forwards", "striker", "strikers"]}}]},
+            ]
+            
+            # Gameweek patterns
+            gameweek_patterns = [
+                {"label": "GAMEWEEK", "pattern": [{"LOWER": "gw"}, {"IS_DIGIT": True}]},
+                {"label": "GAMEWEEK", "pattern": [{"LOWER": "gameweek"}, {"IS_DIGIT": True}]},
+                {"label": "GAMEWEEK", "pattern": [{"LOWER": "game"}, {"LOWER": "week"}, {"IS_DIGIT": True}]},
+            ]
+            
+            # Statistics patterns
+            stat_patterns = [
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["goal", "goals"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["assist", "assists"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["point", "points"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["bonus"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["minute", "minutes", "mins"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": "clean"}, {"LOWER": {"IN": ["sheet", "sheets"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["save", "saves"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": "yellow"}, {"LOWER": {"IN": ["card", "cards"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": "red"}, {"LOWER": {"IN": ["card", "cards"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["form"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["ict", "ict_index"]}}]},
+                {"label": "STAT", "pattern": [{"LOWER": {"IN": ["bps"]}}]},
+            ]
+            
+            # Season patterns
+            season_patterns = [
+                {"label": "SEASON", "pattern": [{"TEXT": {"REGEX": "20\\d{2}-\\d{2}"}}]},
+                {"label": "SEASON", "pattern": [{"TEXT": {"REGEX": "20\\d{2}/\\d{2}"}}]},
+            ]
+            
+            # Create player patterns from all player names
+            player_patterns = []
+            for name in player_names:
+                # Add full name as pattern
+                player_patterns.append({"label": "PLAYER", "pattern": name})
+                
+                # Also add pattern for each word in the name (for partial matching)
+                words = name.split()
+                if len(words) >= 2:
+                    # Add last name as a potential match (but will be validated later)
+                    player_patterns.append({"label": "PLAYER_PARTIAL", "pattern": words[-1]})
+            
+            # Create team patterns
+            team_patterns = [{"label": "TEAM", "pattern": name} for name in team_names]
+            
+            # Add all patterns to ruler
+            ruler.add_patterns(
+                position_patterns
+                + gameweek_patterns
+                + season_patterns
+                + stat_patterns
+                + player_patterns
+                + team_patterns
+            )
+            
+        except Exception as e:
+            print(f"Warning: Failed to initialize spaCy NER: {e}")
+            print("Falling back to rule-based entity extraction.")
+            self.nlp = None
+            self.use_spacy_ner = False
 
 
     def classify(self, query: str) -> Tuple[Intent, Dict[str, any]]: 
@@ -123,10 +252,10 @@ class IntentClassifier:
         original_query = query.strip()
         q = original_query.lower()
 
-        entities = self._extract_entities(original_query)
+        entities = self.extract_fpl_entities_spacy(original_query)
         flags = self._extract_flags(q)
 
-        intent = self._decide_intent(q, entities, flags)
+        intent = self._decide_intent2(q, entities, flags)
 
         metadata = {
             "entities": entities,
@@ -258,10 +387,244 @@ class IntentClassifier:
 
         return entities
 
+
+
+
+    def extract_fpl_entities_spacy(self, text: str) -> Dict[str, List[str]]:
+        """
+        Extract FPL-specific entities from user input using spaCy NER.
+        
+        Returns a dictionary with entity types as keys and lists of extracted values as values.
+        Format matches what intent_classification.py expects.
+        """
+        # Fall back to rule-based extraction if spaCy NER is not initialized
+        if not self.use_spacy_ner or self.nlp is None:
+            return self._extract_entities(text)
+        
+        doc = self.nlp(text)
+        
+        # Initialize entity dictionary
+        entities = {
+            "players": [],
+            "teams": [],
+            "seasons": [],
+            "gameweeks": [],
+            "fixtures": [],
+            "positions": [],
+            "stats": [],
+            "stat_ops": []
+        }
+        
+        # Extract entities from spaCy doc
+        for ent in doc.ents:
+            if ent.label_ == "PLAYER":
+                if ent.text not in entities["players"]:
+                    entities["players"].append(ent.text)
+            elif ent.label_ == "PLAYER_PARTIAL":
+                # Try to resolve partial name to full name
+                last_name = ent.text
+                if last_name in self.last_name_to_full:
+                    # If multiple matches, prefer the most common one or first one
+                    full_name = self.last_name_to_full[last_name][0]
+                    if full_name not in entities["players"]:
+                        entities["players"].append(full_name)
+            elif ent.label_ == "TEAM":
+                if ent.text not in entities["teams"]:
+                    entities["teams"].append(ent.text)
+            elif ent.label_ == "POSITION":
+                pos = ent.text.lower()
+                # Normalize position names
+                pos_map = {
+                    "gk": "goalkeeper",
+                    "goalkeeper": "goalkeeper",
+                    "goalkeepers": "goalkeeper",
+                    "def": "defender",
+                    "defender": "defender",
+                    "defenders": "defender",
+                    "mid": "midfielder",
+                    "midfielder": "midfielder",
+                    "midfielders": "midfielder",
+                    "fwd": "forward",
+                    "forward": "forward",
+                    "forwards": "forward",
+                    "striker": "forward",
+                    "strikers": "forward"
+                }
+                normalized = pos_map.get(pos, pos)
+                if normalized not in entities["positions"]:
+                    entities["positions"].append(normalized)
+            elif ent.label_ == "GAMEWEEK":
+                # Extract the number from "GW10" or "gameweek 10"
+                gw_match = re.search(r'(\d+)', ent.text)
+                if gw_match:
+                    gw_num = gw_match.group(1)
+                    if gw_num not in entities["gameweeks"]:
+                        entities["gameweeks"].append(gw_num)
+            elif ent.label_ == "SEASON":
+                if ent.text not in entities["seasons"]:
+                    entities["seasons"].append(ent.text)
+            elif ent.label_ == "STAT":
+                stat = ent.text.lower()
+                if stat not in entities["stats"]:
+                    entities["stats"].append(stat)
+        
+        # Also use regex to catch gameweeks and seasons that might be missed
+        # Gameweeks
+        gw_pattern = r'\b(gw|gameweek|game\s+week)\s*(\d+)\b'
+        for match in re.finditer(gw_pattern, text, re.IGNORECASE):
+            gw_num = match.group(2)
+            if gw_num not in entities["gameweeks"]:
+                entities["gameweeks"].append(gw_num)
+        
+        # Seasons
+        season_pattern = r'\b(20\d{2}-\d{2})\b'
+        for match in re.finditer(season_pattern, text):
+            season = match.group(1)
+            if season not in entities["seasons"]:
+                entities["seasons"].append(season)
+        
+        # Extract statistics using keyword matching (for stats that might be missed)
+        stat_keywords = {
+            "points": "points", "point": "points",
+            "goals": "goals", "goal": "goals",
+            "assists": "assists", "assist": "assists",
+            "bonus": "bonus",
+            "minutes": "minutes", "mins": "minutes",
+            "clean sheets": "clean sheets", "clean sheet": "clean sheets",
+            "saves": "saves", "save": "saves",
+            "yellow cards": "yellow cards", "yellow card": "yellow cards",
+            "red cards": "red cards", "red card": "red cards",
+            "form": "form",
+            "ict": "ict", "ict index": "ict"
+        }
+        
+        text_lower = text.lower()
+        for keyword, stat_name in stat_keywords.items():
+            if keyword in text_lower and stat_name not in entities["stats"]:
+                entities["stats"].append(stat_name)
+        
+        # Extract stat operations (aggregations)
+        stat_ops_map = {
+            "average": "avg", "avg": "avg", "mean": "avg",
+            "total": "sum", "sum": "sum", "overall": "sum",
+            "how many": "count", "count": "count", "number of": "count",
+            "highest": "max", "most": "max", "maximum": "max", "top": "max",
+            "lowest": "min", "least": "min", "minimum": "min",
+        }
+        
+        for word, op in stat_ops_map.items():
+            if word in text_lower and op not in entities["stat_ops"]:
+                entities["stat_ops"].append(op)
+        
+        return entities
+
     # ------------------------------------------------------------------
     # Step 2: rule-based decision
     # ------------------------------------------------------------------
+
     def _decide_intent(
+        self,
+        q: str,
+        entities: Dict[str, List[str]],
+        f: Dict[str, bool],
+    ) -> Intent:
+        """
+        Priority decision system for FPL intent detection.
+
+        Overall priority:
+        1. High-value intents (comparison, recommendation)
+        2. Player-focused queries
+        3. Team + fixtures ⇒ fixtures
+        4. Team-focused queries
+        5. Fixture-focused queries
+        6. Season / gameweek
+        7. General stats
+        8. Entity search / fallback
+        """
+        q_lower = q.lower()
+        f["has_player_domain"] = any(word in q_lower for word in ["player", "players",'scorer', 'scorers', 'goal scorer', 'goal scorers'])
+        # f["has_gameweek_domain"] = any(word in q_lower for word in ["gameweek", "gw", "game week", "gameweeks"])
+        # f["has_fixture_domain"] = any(word in q_lower for word in ["fixture", "fixtures", "match", "matches", "games"])
+        f["has_team_domain"]   = any(word in q_lower for word in ["team", "teams", "clubs","club"])
+        f["has_position_domain"] = any(word in q_lower for word in ["position", "positions"])
+        f["has_season_domain"] = any(word in q_lower for word in ["season", "seasons"])#"season", "seasons",
+
+        has_player_name = len(entities["players"]) > 0
+        has_team_name = len(entities["teams"]) > 0
+        has_gameweek_context = f["has_gameweek_word"] or f["has_gw_number"] or f["has_gameweek_domain"]
+        # ======================================================
+        # 1. HIGH-PRIORITY INTENTS — always override
+        # ======================================================
+        # print(f"f: {f}")
+        # Comparisons ("A vs B", "compare X and Y")
+        if f["has_compare_word"] and (has_player_name or f["has_player_word"] or has_team_name):
+            return Intent.COMPARISON_QUERY
+
+        # Recommendations ("best", "top", "who should I pick")
+        if f["has_recommend_word"] and (has_player_name or f["has_player_word"]):
+            return Intent.PLAYER_RECOMMENDATION
+
+        # ======================================================
+        # 2. PLAYER-FOCUSED (performance / stats / gw / season)
+        # ======================================================
+
+        if (has_player_name or f["has_player_word"]) and (
+            f["has_stat_word"]
+            or f["has_aggregate_word"]
+            or f["has_gameweek_word"]
+            or f["has_gw_number"]
+            or f["has_season_word"]
+            or entities["seasons"]
+        ):
+            return Intent.PLAYER_PERFORMANCE
+
+        # Position queries ("players who play as DEF")
+        if f["has_position_word"] or any(w in q for w in ["play as", "plays as", "playing as"])or f["has_position_domain"]:
+            return Intent.POSITION_QUERY
+
+
+        if f["has_player_domain"]:
+            return Intent.PLAYER_SEARCH
+        # ======================================================
+        # 3. TEAM + FIXTURES ⇒ FIXTURE_QUERY
+        if (has_team_name or f["has_team_word"]) and (f["has_fixture_word"]):
+            return Intent.FIXTURE_QUERY
+
+        # 4. TEAM INTENTS (no explicit fixtures)
+        if has_team_name or f["has_team_word"] or f["has_team_domain"]:
+            return Intent.TEAM_QUERY
+
+        # 5. PURE GAMEWEEK INTENTS (no specific team / player)
+        #    e.g. "What games are in gameweek 5?",
+        #         "How many total gameweeks are there?"
+        if has_gameweek_context and not has_team_name and not f["has_team_word"] \
+        and not has_player_name and not f["has_player_word"]:
+            return Intent.GAMEWEEK_QUERY
+
+        # 6. PURE FIXTURE INTENTS (no gameweek context)
+        if f["has_fixture_word"] and not has_gameweek_context:
+            return Intent.FIXTURE_QUERY
+
+        # 7. SEASON / GAMEWEEK INTENTS (generic)
+        if f["has_season_word"] or entities["seasons"] or f["has_season_domain"]:
+            return Intent.SEASON_QUERY
+
+        if has_gameweek_context or f["has_gameweek_domain"]:
+            return Intent.GAMEWEEK_QUERY
+
+        # 8. GENERAL STATISTICS
+        if f["has_stat_word"] or f["has_aggregate_word"]:
+            return Intent.STATISTICS_QUERY
+
+        # 9–10. ENTITY_SEARCH / UNKNOWN as you had
+        if f["has_search_word"]:
+            return Intent.ENTITY_SEARCH
+
+        if has_player_name or f["has_player_word"]:
+            return Intent.ENTITY_SEARCH
+        return Intent.UNKNOWN      
+
+    def _decide_intent2(
         self,
         q: str,
         entities: Dict[str, List[str]],
@@ -314,7 +677,17 @@ class IntentClassifier:
         # Recommendations ("best", "top", "who should I pick")
         if f["has_recommend_word"] and (has_player_name or f["has_player_word"] or f["has_player_domain"]):
             return Intent.PLAYER_RECOMMENDATION
-        
+        # is_global_stats = (
+        #     (f["has_stat_word"] or f["has_aggregate_word"])  # TRUE
+        #     and not has_player_name  # TRUE
+        #     and not has_team_name  # TRUE
+        #     and not has_gameweek_context  # TRUE
+        #     and not has_season_entity  # TRUE
+        #     and not f["has_season_word"]  # FALSE - fails here!
+        #     and not f.get("has_season_domain", False)  # would also be FALSE
+        # )
+        # if is_global_stats:
+        #     return Intent.STATISTICS_QUERY
         # ======================================================
         # 2. PLAYER-FOCUSED INTENTS
         #    Order:

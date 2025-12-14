@@ -2,7 +2,7 @@
 Quick test script for embedding system with small sample
 """
 
-from embedding import FPLEmbeddingSystem
+from embeddings.embedding import FPLEmbeddingSystem
 import os
 
 def embed_query(query: str, model_name: str, embedding_dim: int, top_k: int = 5):

@@ -23,6 +23,7 @@ faiss_indexes_player_gw/
 
 # Ignore embedding/model artifacts
 indices_all-MiniLM-L6-v2
+indices_all-MiniLM-L6-v2.1
 indices_all-mpnet-base-v2
 m3/__pycache__/
 **/__pycache__/

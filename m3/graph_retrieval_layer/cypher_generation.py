@@ -1,7 +1,7 @@
 """
 Test script to show Cypher query generation with entities
 """
-
+#should be with the graph retrieval layer
 import sys
 from pathlib import Path
 
@@ -159,24 +159,6 @@ def run_models_for_query(
     use_baseline = retrieval_method in ("baseline", "hybrid")
     use_embeddings = retrieval_method in ("embeddings", "hybrid")
 
-    # Basic validation
-    # if use_embeddings and (emb_indexes is None or not emb_indexes):
-    #     return {
-    #         "user_query": user_query,
-    #         "intent": "unknown",
-    #         "entities": {},
-    #         "error": "Embeddings retrieval requested but FAISS indexes are not initialized.",
-    #         "retrieval_method": retrieval_method,
-    #     }
-    # if use_embeddings and not emb_model_key:
-    #     return {
-    #         "user_query": user_query,
-    #         "intent": "unknown",
-    #         "entities": {},
-    #         "error": "Embeddings retrieval requested but no embedding model was selected.",
-    #         "retrieval_method": retrieval_method,
-    #     }
-
     # --- Intent classification (we always do this) ---
     classifier = IntentClassifier()
     intent, metadata = classifier.classify(user_query)
@@ -238,7 +220,7 @@ def run_models_for_query(
                 emb_embedding_dim = 768
             else:
                 raise ValueError(f"Invalid embedding model key: {emb_model_key}")
-            hits = embed_query(query=user_query, model_name=emb_model_name, embedding_dim=emb_embedding_dim, top_k=10)
+            hits = embed_query(query=user_query, model_name=emb_model_name, embedding_dim=emb_embedding_dim, top_k=38)
             for result in hits:
                 meta = result['metadata']
                 embedding_rows.append(dict(meta))
@@ -354,26 +336,26 @@ def run_models_for_query(
 
 def build_llm_prompt(user_query: str, table_str: str) -> str:
     return f"""
-You are a Fantasy Premier League (FPL) assistant.
+    You are a Fantasy Premier League (FPL) assistant.
 
-The user asked this question:
-\"\"\"{user_query}\"\"\"
+    The user asked this question:
+    \"\"\"{user_query}\"\"\"
 
-You have the following context table, coming from the FPL knowledge graph
-(baseline Cypher queries) and/or semantic embedding search over per-player
-gameweek rows:
+    You have the following context table, coming from the FPL knowledge graph
+    (baseline Cypher queries) and/or semantic embedding search over per-player
+    gameweek rows:
 
-{table_str}
+    {table_str}
 
-Instructions:
-- Use ONLY the information in the table to answer.
-- Answer clearly in good English.
-- If the table is empty or doesn't contain enough information, say that you
-  don't have the data to answer exactly.
-- Be concise but informative, and explain the key numbers in a friendly way.
+    Instructions:
+    - Use ONLY the information in the table to answer.
+    - Answer clearly in good English.
+    - If the table is empty or doesn't contain enough information, say that you
+    don't have the data to answer exactly.
+    - Be concise but informative, and explain the key numbers in a friendly way.
 
-Now write your answer to the user:
-"""
+    Now write your answer to the user:
+    """
 
 
 def explain_results_with_llm(user_query: str, table_str: str, llm: LLM) -> str:
@@ -760,4 +742,7 @@ if __name__ == "__main__":
     ]
     # test_cypher_generation(test_queries)
     # test_cypher_generation2(test_queries+test_queries_2+test_queries_3+test_queries_4+test_queries_5+test_queries_6)
-    test_cypher_generation2(test_queries_6)
+    test_queries_7 = [
+        "Who are the top players by gameweek 5 in the 2022-23 season?",
+    ]
+    test_cypher_generation2(test_queries_7)
