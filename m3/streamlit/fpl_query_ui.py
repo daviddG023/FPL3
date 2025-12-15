@@ -422,6 +422,24 @@ def main():
                     if result.get("exec_params"):
                         st.json(result["exec_params"])
 
+            # ✅ Prompt viewer
+            st.markdown("---")
+            st.subheader("🧾 Prompt sent to LLM")
+
+            prompts_used = result.get("prompts_used", {})
+
+            if not prompts_used:
+                st.info("No prompts captured.")
+            else:
+                with st.expander("Show prompt(s)"):
+                    model_for_prompt = st.selectbox(
+                        "Choose model prompt to view",
+                        list(prompts_used.keys()),
+                        key="prompt_model_select",
+                    )
+                    st.code(prompts_used[model_for_prompt], language="text")
+
+
             # ── Results + LLM answers ──
             st.markdown("---")
             st.subheader("📊 Retrieved Context & LLM Comparison")

@@ -239,6 +239,8 @@ def run_models_for_query(
 
         # --- Run selected LLMs on the combined context ---
         models_output: Dict[str, Any] = {}
+        prompts_used: Dict[str, str] = {}
+
 
         if "Gemma" in models_to_run:
             start = time.perf_counter()
@@ -260,6 +262,7 @@ def run_models_for_query(
         if "GPT-3.5" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
+                prompts_used["GPT-3.5 (gpt-3.5-turbo)"] = prompt
                 info = call_openai_model("gpt-3.5-turbo", prompt)
                 models_output["GPT-3.5 (gpt-3.5-turbo)"] = {
                     "answer": info["text"],
@@ -275,9 +278,10 @@ def run_models_for_query(
         if "GPT-4" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
-                print("\nCalling Gemini...\n")
+                print("\n===== LLM PROMPT =====\n")
                 print(prompt)
-                print("===================================")
+                print("\n======================\n", flush=True)
+                prompts_used["GPT-4 (gpt-4o)"] = prompt
                 info = call_openai_model("gpt-4o", prompt)
                 models_output["GPT-4 (gpt-4o)"] = {
                     "answer": info["text"],
@@ -293,7 +297,7 @@ def run_models_for_query(
         if "Gemini" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
-
+                prompts_used["Gemini (gemini-2.5-flash)"] = prompt
                 print("\nCalling Gemini...\n")
                 print(prompt)
                 print("===================================")
@@ -334,6 +338,7 @@ def run_models_for_query(
             "raw_results": combined_rows,
             "table_str": table_str,
             "models": models_output,
+            "prompts_used": prompts_used,   # ✅ NEW
         }
 
     finally:
