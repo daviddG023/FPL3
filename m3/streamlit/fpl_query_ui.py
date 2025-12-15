@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]   # this is the m3 folder
 sys.path.append(str(ROOT))
 
-
+from embeddings.embedding_registry import load_embedding_systems
 import streamlit as st
 import sys
 import os
@@ -104,8 +104,10 @@ def initialize_session_state():
     """Initialize session state variables"""
     if 'classifier' not in st.session_state:
         st.session_state.classifier = IntentClassifier()
-    
-    
+
+    if "emb_systems" not in st.session_state:
+        st.session_state.emb_systems = load_embedding_systems(csv_path="fpl_two_seasons.csv")
+
     if 'retrieval' not in st.session_state:
         config = load_config()
         if config:
@@ -369,6 +371,8 @@ def main():
                         models_to_run=selected_models,
                         retrieval_method=retrieval_method,      # NEW
                         emb_model_key=emb_model_key,            # NEW
+                        emb_indexes=st.session_state.emb_systems,  
+
                     )
                 except Exception as e:
                     result = {"error": f"Error running pipeline: {e}"}

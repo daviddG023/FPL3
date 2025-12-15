@@ -134,7 +134,7 @@ class FPLEmbeddingSystem:
         else:
             stats_phrases.append(f"did not play any minutes")
 
-        add_int_stat("goals_scored", "scored {n} goal" + ("s" if row.get("goals_scored", 0) != 1 else ""))
+        add_int_stat("goals_scored", "scored {n} goal" + ("s" if int(row.get("goals_scored", 0) or 0) != 1 else ""))
         add_int_stat("assists", "provided {n} assist" + ("s" if row.get("assists", 0) != 1 else ""))
         add_int_stat("clean_sheets", "kept {n} clean sheet" + ("s" if row.get("clean_sheets", 0) != 1 else ""))
         add_int_stat("goals_conceded", "conceded {n} goal" + ("s" if row.get("goals_conceded", 0) != 1 else ""))
@@ -142,8 +142,7 @@ class FPLEmbeddingSystem:
         # Saves -> only if goalkeeper
         if pos_upper in ("GK", "GKP", "GOALKEEPER"):
             add_int_stat("saves", "made {n} save" + ("s" if row.get("saves", 0) != 1 else ""))
-        else:
-            stats_phrases.append(f"did not make any saves")
+        
 
         add_int_stat("bonus", "earned {n} bonus point" + ("s" if row.get("bonus", 0) != 1 else ""))
         add_int_stat("total_points", "returned {n} FPL point" + ("s" if row.get("total_points", 0) != 1 else ""))
@@ -381,57 +380,69 @@ class FPLEmbeddingSystem:
         # Convert example row to text
         example_text = self.row_to_text(pd.Series(example_row))
         return self.retrieve(example_text, k)
+    
+
+
+def ensure_index(system: FPLEmbeddingSystem, csv_path: str, texts=None, metadata=None):
+    """
+    Load existing FAISS index+metadata if present; otherwise build and save it.
+    Reuses `texts`/`metadata` if provided to avoid processing CSV twice.
+    """
+    if os.path.exists(system.faiss_index_path) and os.path.exists(system.metadata_path):
+        print(f"\n✅ [{system.model_name}] Found existing index. Loading...")
+        try:
+            system.load_index()
+            print(f"✅ [{system.model_name}] Index loaded successfully!")
+            return texts, metadata
+        except Exception as e:
+            print(f"❌ [{system.model_name}] Error loading index: {e}")
+            print(f"🔄 [{system.model_name}] Rebuilding index...")
+            if os.path.exists(system.faiss_index_path):
+                os.remove(system.faiss_index_path)
+            if os.path.exists(system.metadata_path):
+                os.remove(system.metadata_path)
+
+    # Build index
+    print(f"\n📊 [{system.model_name}] Building index from CSV...")
+    if texts is None or metadata is None:
+        texts, metadata = system.process_csv(csv_path, max_rows=None)
+
+    embeddings = system.create_embeddings(texts)
+    system.build_faiss_index(embeddings, metadata)
+    system.save_index()
+    return texts, metadata
+
+
+def print_results(model_label: str, results: List[Dict], top_k: int = 5):
+    print(f"\n--- {model_label} Top {min(top_k, len(results))} ---")
+    for r in results[:top_k]:
+        md = r["metadata"]
+        print(f"  Rank {r['rank']} (Sim: {r['similarity_score']:.4f}) | "
+              f"{md.get('season', 'N/A')} | {md.get('name', 'N/A')} | "
+              f"Pos:{md.get('position', 'N/A')} | "
+              f"Pts:{md.get('total_points', 'N/A')} "
+              f"G:{md.get('goals_scored', 'N/A')} A:{md.get('assists', 'N/A')}")
 
 
 def main():
-    """Main function to test the embedding system"""
-    
-    # Initialize system
     print("=" * 80)
-    print("FPL Embedding System - Full Dataset Processing")
+    print("FPL Embedding System - Build/Load MiniLM + MPNet Indices")
     print("=" * 80)
-    
-    embedding_system = FPLEmbeddingSystem()
-    
-    # Path to CSV file
+
     csv_path = "fpl_two_seasons.csv"
-    
-    # Check if index already exists
-    if os.path.exists(embedding_system.faiss_index_path) and os.path.exists(embedding_system.metadata_path):
-        print("\n✅ Found existing index. Loading...")
-        try:
-            embedding_system.load_index()
-            print("✅ Index loaded successfully!")
-        except Exception as e:
-            print(f"❌ Error loading index: {e}")
-            print("Rebuilding index...")
-            # Fall through to rebuild
-            if os.path.exists(embedding_system.faiss_index_path):
-                os.remove(embedding_system.faiss_index_path)
-            if os.path.exists(embedding_system.metadata_path):
-                os.remove(embedding_system.metadata_path)
-    
-    # Build index if it doesn't exist or loading failed
-    if embedding_system.index is None:
-        print("\n📊 Processing CSV and building index...")
-        
-        # Process full CSV dataset
-        texts, metadata = embedding_system.process_csv(csv_path, max_rows=None)
-        
-        # Create embeddings
-        embeddings = embedding_system.create_embeddings(texts)
-        
-        # Build FAISS index
-        embedding_system.build_faiss_index(embeddings, metadata)
-        
-        # Save index
-        embedding_system.save_index()
-    
-    # Test retrieval queries
+
+    # Create two systems (two models => two separate FAISS indices on disk)
+    mini = FPLEmbeddingSystem(model_name="all-MiniLM-L6-v2", embedding_dim=384)
+    mpnet = FPLEmbeddingSystem(model_name="all-mpnet-base-v2", embedding_dim=768)
+
+    # Build/load MiniLM first, and reuse processed texts/metadata for MPNet
+    texts, metadata = ensure_index(mini, csv_path, texts=None, metadata=None)
+    _, _ = ensure_index(mpnet, csv_path, texts=texts, metadata=metadata)
+
     print("\n" + "=" * 80)
-    print("Testing Retrieval Queries")
+    print("Testing Retrieval Queries (MiniLM vs MPNet)")
     print("=" * 80)
-    
+
     test_queries = [
         "Season:2022-23, name:Mohamed Salah, pos:MID, points:20, goals:2, assists:1",
         "Season:2022-23, pos:FWD, points:15, goals:1",
@@ -439,64 +450,26 @@ def main():
         "name:Erling Haaland, goals:3, points:17",
         "gameweek:10, points:10",
     ]
-    
+
     for i, query in enumerate(test_queries, 1):
         print(f"\n{'='*80}")
         print(f"Query {i}: {query}")
         print(f"{'='*80}")
-        
+
         try:
-            results = embedding_system.retrieve(query, k=5)
-            
-            print(f"\nTop {len(results)} results:")
-            for result in results:
-                metadata = result['metadata']
-                print(f"\n  Rank {result['rank']} (Similarity: {result['similarity_score']:.4f}):")
-                print(f"    Season: {metadata.get('season', 'N/A')}")
-                print(f"    Player: {metadata.get('name', 'N/A')}")
-                print(f"    Position: {metadata.get('position', 'N/A')}")
-                print(f"    Points: {metadata.get('total_points', 'N/A')}, Goals: {metadata.get('goals_scored', 'N/A')}, Assists: {metadata.get('assists', 'N/A')}")
-                print(f"    Gameweek: {metadata.get('GW', 'N/A')}, Fixture: {metadata.get('fixture', 'N/A')}")
-                if metadata.get('home_team') and metadata.get('away_team'):
-                    print(f"    Match: {metadata.get('home_team')} vs {metadata.get('away_team')}")
+            res_mini = mini.retrieve(query, k=5)
+            res_mpnet = mpnet.retrieve(query, k=5)
+
+            print_results("MiniLM (384)", res_mini, top_k=5)
+            print_results("MPNet (768)", res_mpnet, top_k=5)
+
         except Exception as e:
             print(f"❌ Error: {e}")
-    
-    # Test retrieval by example
-    print("\n" + "=" * 80)
-    print("Testing Retrieval by Example")
-    print("=" * 80)
-    
-    example_row = {
-        'season': '2022-23',
-        'name': 'Mohamed Salah',
-        'position': 'MID',
-        'total_points': 20,
-        'goals_scored': 2,
-        'assists': 1,
-        'GW': 5
-    }
-    
-    print(f"\nExample row: {example_row}")
-    try:
-        results = embedding_system.retrieve_by_example(example_row, k=5)
-        
-        print(f"\nTop {len(results)} similar results:")
-        for result in results:
-            metadata = result['metadata']
-            print(f"\n  Rank {result['rank']} (Similarity: {result['similarity_score']:.4f}):")
-            print(f"    {metadata.get('season', 'N/A')} - {metadata.get('name', 'N/A')} ({metadata.get('position', 'N/A')})")
-            print(f"    Points: {metadata.get('total_points', 'N/A')}, Goals: {metadata.get('goals_scored', 'N/A')}, Assists: {metadata.get('assists', 'N/A')}")
-            print(f"    Gameweek: {metadata.get('GW', 'N/A')}, Fixture: {metadata.get('fixture', 'N/A')}")
-    except Exception as e:
-        print(f"❌ Error: {e}")
-    
-    print("\n" + "=" * 80)
-    print("Test completed!")
-    print("=" * 80)
+
+    print("\n✅ Done. You now have two indices saved at:")
+    print(f"   MiniLM: {os.path.abspath(mini.faiss_index_path)}")
+    print(f"   MPNet:  {os.path.abspath(mpnet.faiss_index_path)}")
 
 
 if __name__ == "__main__":
-    
     main()
-

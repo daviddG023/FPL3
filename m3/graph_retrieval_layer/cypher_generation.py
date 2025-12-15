@@ -18,11 +18,9 @@ from langchain_core.language_models.llms import LLM  # you already have this imp
 import os
 from huggingface_hub import InferenceClient
 from pydantic import Field
-from embeddings.test_embedding import embed_query
+from embeddings.embedding_registry import load_embedding_systems
 from google import genai
 import traceback
-
-
 
 load_dotenv()
 
@@ -212,18 +210,20 @@ def run_models_for_query(
         # --- Embedding retrieval (per-row player-GW docs) ---
         embedding_rows: List[Dict[str, Any]] = []
         if use_embeddings:
-            if emb_model_key == "minilm":
-                emb_model_name = "all-MiniLM-L6-v2"
-                emb_embedding_dim = 384
-            elif emb_model_key == "mpnet":
-                emb_model_name = "all-mpnet-base-v2"
-                emb_embedding_dim = 768
-            else:
+            if emb_model_key not in ("minilm", "mpnet"):
                 raise ValueError(f"Invalid embedding model key: {emb_model_key}")
-            hits = embed_query(query=user_query, model_name=emb_model_name, embedding_dim=emb_embedding_dim, top_k=38)
-            for result in hits:
-                meta = result['metadata']
-                embedding_rows.append(dict(meta))
+
+            # Use cached/preloaded systems if passed in, else load/build them here once
+            systems = emb_indexes if emb_indexes is not None else load_embedding_systems(
+                csv_path="fpl_two_seasons.csv"
+            )
+
+            system = systems[emb_model_key]  # FPLEmbeddingSystem instance
+            hits = system.retrieve(user_query, k=38)
+
+            for hit in hits:
+                embedding_rows.append(dict(hit["metadata"]))
+
 
         # --- Merge context depending on method ---
         if retrieval_method == "baseline":
@@ -275,6 +275,9 @@ def run_models_for_query(
         if "GPT-4" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
+                print("\nCalling Gemini...\n")
+                print(prompt)
+                print("===================================")
                 info = call_openai_model("gpt-4o", prompt)
                 models_output["GPT-4 (gpt-4o)"] = {
                     "answer": info["text"],
@@ -290,6 +293,10 @@ def run_models_for_query(
         if "Gemini" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
+
+                print("\nCalling Gemini...\n")
+                print(prompt)
+                print("===================================")
 
                 start = time.time()
 
