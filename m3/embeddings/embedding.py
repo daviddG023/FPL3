@@ -36,7 +36,7 @@ class FPLEmbeddingSystem:
         self.embedding_dim = embedding_dim
         
         # Load model FIRST before creating folders (to avoid conflicts with existing folders)
-        self.model = SentenceTransformer(model_name)
+        self.model = SentenceTransformer(model_name, device="cpu")
         
         self.index = None
         self.metadata = []  # Store original row data for each embedding

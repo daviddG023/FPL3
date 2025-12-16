@@ -47,7 +47,7 @@ def call_openai_model(model: str, prompt: str) -> Dict[str, Any]:
     resp = openai_client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+        temperature=0,
         max_tokens=500,
     )
     elapsed = time.perf_counter() - start
@@ -136,16 +136,16 @@ def run_models_for_query(
     intent_str = intent.value.upper()
 
     # Try to extract season / gameweek for optional embedding filtering
-    season_entity: Optional[str] = None
-    gw_entity: Optional[str] = None
-    for key in ("season", "seasons"):
-        if key in entities and entities[key]:
-            season_entity = str(entities[key][0])
-            break
-    for key in ("gameweek", "gw", "gameweeks"):
-        if key in entities and entities[key]:
-            gw_entity = str(entities[key][0])
-            break
+    # season_entity: Optional[str] = None
+    # gw_entity: Optional[str] = None
+    # for key in ("season", "seasons"):
+    #     if key in entities and entities[key]:
+    #         season_entity = str(entities[key][0])
+    #         break
+    # for key in ("gameweek", "gw", "gameweeks"):
+    #     if key in entities and entities[key]:
+    #         gw_entity = str(entities[key][0])
+    #         break
 
     # --- Baseline retrieval ---
     baseline_results: List[Dict[str, Any]] = []
@@ -191,7 +191,7 @@ def run_models_for_query(
             )
 
             system = systems[emb_model_key]  # FPLEmbeddingSystem instance
-            hits = system.retrieve(user_query, k=38)
+            hits = system.retrieve(user_query, k=20)
 
             for hit in hits:
                 embedding_rows.append(dict(hit["metadata"]))
@@ -304,7 +304,7 @@ def run_models_for_query(
             "raw_results": combined_rows,
             "table_str": table_str,
             "models": models_output,
-            "prompt_used": prompt_used,   # ✅ NEW
+            "prompt_used": prompt_used,  
         }
 
     finally:

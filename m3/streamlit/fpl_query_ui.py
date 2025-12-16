@@ -345,7 +345,7 @@ def main():
             index=0
         )
 
-        
+        # prevents infinite loop of rerunning
         if "example_ran" not in st.session_state:
             st.session_state.example_ran = False
 
