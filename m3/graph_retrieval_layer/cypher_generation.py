@@ -274,7 +274,6 @@ def run_models_for_query(
                 )
                 usage = info.usage_metadata
                 response_time = time.time() - start
-                print(usage)
                 prompt_tokens = getattr(usage, "prompt_token_count", None)
                 completion_tokens = getattr(usage, "candidates_token_count", None)
                 total_tokens = getattr(usage, "total_token_count", None)
