@@ -20,7 +20,6 @@ from huggingface_hub import InferenceClient
 from pydantic import Field
 from embeddings.embedding_registry import load_embedding_systems
 from google import genai
-import traceback
 
 load_dotenv()
 
@@ -32,39 +31,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Initialize Hugging Face client for Gemma
-client = InferenceClient(
-    model="google/gemma-2-2b-it",
-    token=HF_TOKEN,
-)
-
-class GemmaWrapper(LLM):
-    """Wrapper that lets LangChain call Gemma via HuggingFace Inference API."""
-    client: Any = Field(...)
-    max_tokens: int = 500
-
-    @property
-    def _llm_type(self) -> str:
-        return "gemma_hf_api"
-
-    def _call(self, prompt: str, stop: Optional[List[str]] = None):
-        response = self.client.chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=self.max_tokens,
-            temperature=0.2,
-        )
-        return response.choices[0].message["content"]
-
-# ✅ This is what your test_cypher_generation2() will use
-gemma_llm = GemmaWrapper(client=client)
-
 # ---- OpenAI helpers (no LangChain wrapper needed) ----
 
 OPENAI_PRICES_USD = {
-    # adjust to whatever models you use and current prices
-    "gpt-3.5-turbo": {"input": 0.0005 / 1000, "output": 0.0015 / 1000},
-    "gpt-4o-mini":   {"input": 0.00015 / 1000, "output": 0.0006 / 1000},
-    "gpt-4o":        {"input": 0.005 / 1000, "output": 0.015 / 1000},
+    "gpt-3.5-turbo": {"input": 0.00050, "output": 0.00150},
+    "gpt-4o-mini":   {"input": 0.00015, "output": 0.00060},
+    "gpt-4o":        {"input": 0.00250, "output": 0.01000},
 }
 
 def call_openai_model(model: str, prompt: str) -> Dict[str, Any]:
@@ -242,22 +214,43 @@ def run_models_for_query(
         prompts_used: Dict[str, str] = {}
 
 
-        if "Gemma" in models_to_run:
-            start = time.perf_counter()
+        if "GPT-4o" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
-                gemma_text = gemma_llm.invoke(prompt)
-                elapsed = time.perf_counter() - start
-                models_output["Gemma (google/gemma-2-2b-it)"] = {
-                    "answer": gemma_text,
-                    "response_time": elapsed,
-                    "prompt_tokens": None,
-                    "completion_tokens": None,
-                    "total_tokens": None,
-                    "cost_usd": None,
+                prompts_used["GPT-4o"] = prompt
+
+                info = call_openai_model("gpt-4o", prompt)
+
+                models_output["GPT-4o"] = {
+                    "answer": info["text"],
+                    "response_time": info["response_time"],
+                    "prompt_tokens": info["prompt_tokens"],
+                    "completion_tokens": info["completion_tokens"],
+                    "total_tokens": info["total_tokens"],
+                    "cost_usd": info["cost_usd"],
                 }
             except Exception as e:
-                models_output["Gemma (google/gemma-2-2b-it)"] = {"error": str(e)}
+                models_output["GPT-4o"] = {"error": str(e)}
+
+        if "GPT-4o-mini" in models_to_run:
+            try:
+                prompt = build_llm_prompt(user_query, table_str)
+                prompts_used["GPT-4o-mini"] = prompt
+
+                info = call_openai_model("gpt-4o-mini", prompt)
+
+                models_output["GPT-4o-mini"] = {
+                    "answer": info["text"],
+                    "response_time": info["response_time"],
+                    "prompt_tokens": info["prompt_tokens"],
+                    "completion_tokens": info["completion_tokens"],
+                    "total_tokens": info["total_tokens"],
+                    "cost_usd": info["cost_usd"],
+                }
+            except Exception as e:
+                models_output["GPT-4o-mini"] = {"error": str(e)}
+
+
 
         if "GPT-3.5" in models_to_run:
             try:
@@ -275,25 +268,6 @@ def run_models_for_query(
             except Exception as e:
                 models_output["GPT-3.5 (gpt-3.5-turbo)"] = {"error": str(e)}
 
-        if "GPT-4" in models_to_run:
-            try:
-                prompt = build_llm_prompt(user_query, table_str)
-                print("\n===== LLM PROMPT =====\n")
-                print(prompt)
-                print("\n======================\n", flush=True)
-                prompts_used["GPT-4 (gpt-4o)"] = prompt
-                info = call_openai_model("gpt-4o", prompt)
-                models_output["GPT-4 (gpt-4o)"] = {
-                    "answer": info["text"],
-                    "response_time": info["response_time"],
-                    "prompt_tokens": info["prompt_tokens"],
-                    "completion_tokens": info["completion_tokens"],
-                    "total_tokens": info["total_tokens"],
-                    "cost_usd": info["cost_usd"],
-                }
-            except Exception as e:
-                models_output["GPT-4 (gpt-4o)"] = {"error": str(e)}
-        
         if "Gemini" in models_to_run:
             try:
                 prompt = build_llm_prompt(user_query, table_str)
@@ -542,169 +516,6 @@ def load_config(path="config.txt"):
         return {}
 
 
-
-def test_cypher_generation(Queries: List[str]) -> List[Dict[str, Any]]:
-    """
-    Test Cypher query generation and execution for various queries.
-    
-    After executing each query, this function:
-      - formats the results as a table string
-      - sends (user_query + table) to the LLM (Gemma) to get a natural-language answer
-      - returns a list of dicts with everything useful
-    """
-    
-    # Load config and initialize retrieval with actual connection
-    uri = "neo4j+s://6fe2fa9b.databases.neo4j.io"
-    username = "neo4j"
-    password = "6VR8BRVu3AJPCP8QZio4ifSrdYoHb1eHPDGcVBmD0kc"
-    database = "neo4j"
-    retrieval = GraphRetrieval(uri, username, password, database)
-    classifier = IntentClassifier()
-    
-    results_summary: List[Dict[str, Any]] = []
-    
-    print("=" * 100)
-    print("Cypher Query Generation and Execution Test")
-    print("=" * 100)
-    
-    for query in Queries:
-        print(f"\n{'='*100}")
-        print(f"Query: {query}")
-        print(f"{'='*100}")
-        
-        try:
-            # Classify intent and extract entities
-            intent, metadata = classifier.classify(query)
-            entities = metadata["entities"]
-            
-            print(f"\nIntent: {intent.value}")
-            print(f"Entities Extracted: {entities}")
-            
-            # Generate Cypher query
-            intent_str = intent.value.upper()
-            query_name, cypher_query, params = retrieval.generate_cypher_query(intent_str, entities)
-            
-            if query_name:
-                query_info = retrieval.get_query_info(query_name)
-                print(f"\nSelected Query Template: {query_name}")
-                print(f"Description: {query_info.get('description', 'N/A')}")
-                print(f"\nGenerated Cypher Query:")
-                print("-" * 100)
-                print(cypher_query)
-                print("-" * 100)
-                print(f"\nParameters: {params}")
-
-                # Execute query and get results
-                print(f"\n{'='*100}")
-                print("Executing Query...")
-                print(f"{'='*100}")
-                
-                try:
-                    # Get the actual query template and parameters for execution
-                    query_template, exec_params = retrieval.parameterize_query(query_name, entities)
-                    
-                    # Clean up None values in parameters (replace with actual None for Neo4j)
-                    clean_params = {k: (None if v is None else v) for k, v in exec_params.items()}
-                    
-                    # Execute the query
-                    results = retrieval.execute_query(query_template, clean_params)
-                    
-                    print(f"\n✅ Query executed successfully!")
-                    print(f"📊 Results: {len(results)} record(s) found\n")
-                    
-                    # Format results as text table
-                    if results:
-                        table_str = format_results_table(results)
-                        print(table_str)
-                    else:
-                        table_str = "No results returned."
-                        print(table_str)
-
-                    # 🔥 Call LLM to explain the results in good English
-                    try:
-                        llm_answer = explain_results_with_llm(
-                            user_query=query,
-                            table_str=table_str,
-                            llm=gemma_llm,     # GemmaWrapper instance from your RAG code
-                        )
-                        print("\n🧠 LLM Answer:")
-                        print(llm_answer)
-                    except Exception as llm_err:
-                        llm_answer = f"Error calling LLM: {llm_err}"
-                        print(f"\n❌ {llm_answer}")
-
-                    # Store everything for external use (e.g., Streamlit)
-                    results_summary.append({
-                        "user_query": query,
-                        "intent": intent.value,
-                        "entities": entities,
-                        "query_name": query_name,
-                        "cypher_query": cypher_query,
-                        "exec_query_template": query_template,
-                        "exec_params": clean_params,
-                        "raw_results": results,
-                        "table_str": table_str,
-                        "llm_answer": llm_answer,
-                    })
-                        
-                except Exception as exec_error:
-                    print(f"\n❌ Error executing query: {exec_error}")
-                    print(f"\nQuery Template:")
-                    print(query_template[:500] + "..." if len(query_template) > 500 else query_template)
-                    print(f"\nParameters: {exec_params}")
-
-                    results_summary.append({
-                        "user_query": query,
-                        "intent": intent.value,
-                        "entities": entities,
-                        "query_name": query_name,
-                        "error": str(exec_error),
-                    })
-                    
-            else:
-                print("\n❌ No suitable query template found!")
-                print("This means:")
-                print("  - Either the intent doesn't match any query templates")
-                print("  - Or required entities are missing")
-                
-                # Show what queries are available for this intent
-                available_queries = [
-                    name for name, template in retrieval.query_templates.items()
-                    if template["intent"] == intent_str
-                ]
-                if available_queries:
-                    print(f"\nAvailable queries for intent '{intent_str}':")
-                    for qname in available_queries:
-                        qinfo = retrieval.get_query_info(qname)
-                        print(f"  - {qname}: {qinfo.get('description', 'N/A')}")
-                        print(f"    Required entities: {qinfo.get('required_entities', [])}")
-                        print(f"    Optional entities: {qinfo.get('optional_entities', [])}")
-                
-                results_summary.append({
-                    "user_query": query,
-                    "intent": intent.value,
-                    "entities": entities,
-                    "query_name": None,
-                    "error": "No suitable query template found",
-                })
-        
-        except Exception as e:
-            print(f"\n❌ Error processing query: {e}")
-            traceback.print_exc()
-            
-            results_summary.append({
-                "user_query": query,
-                "error": str(e),
-            })
-    
-    # Close connection
-    retrieval.close()
-    print(f"\n{'='*100}")
-    print("Test completed. Database connection closed.")
-    print(f"{'='*100}")
-    
-    # ✅ Return structured data for further use
-    return results_summary
 
 
 if __name__ == "__main__":
