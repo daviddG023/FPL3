@@ -211,15 +211,13 @@ def run_models_for_query(
 
         # --- Run selected LLMs on the combined context ---
         models_output: Dict[str, Any] = {}
-        prompts_used: Dict[str, str] = {}
 
+        prompt_used = build_llm_prompt(user_query, table_str)
 
         if "GPT-4o" in models_to_run:
             try:
-                prompt = build_llm_prompt(user_query, table_str)
-                prompts_used["GPT-4o"] = prompt
 
-                info = call_openai_model("gpt-4o", prompt)
+                info = call_openai_model("gpt-4o", prompt_used)
 
                 models_output["GPT-4o"] = {
                     "answer": info["text"],
@@ -234,10 +232,9 @@ def run_models_for_query(
 
         if "GPT-4o-mini" in models_to_run:
             try:
-                prompt = build_llm_prompt(user_query, table_str)
-                prompts_used["GPT-4o-mini"] = prompt
 
-                info = call_openai_model("gpt-4o-mini", prompt)
+
+                info = call_openai_model("gpt-4o-mini", prompt_used)
 
                 models_output["GPT-4o-mini"] = {
                     "answer": info["text"],
@@ -254,9 +251,8 @@ def run_models_for_query(
 
         if "GPT-3.5" in models_to_run:
             try:
-                prompt = build_llm_prompt(user_query, table_str)
-                prompts_used["GPT-3.5 (gpt-3.5-turbo)"] = prompt
-                info = call_openai_model("gpt-3.5-turbo", prompt)
+    
+                info = call_openai_model("gpt-3.5-turbo", prompt_used)
                 models_output["GPT-3.5 (gpt-3.5-turbo)"] = {
                     "answer": info["text"],
                     "response_time": info["response_time"],
@@ -270,17 +266,13 @@ def run_models_for_query(
 
         if "Gemini" in models_to_run:
             try:
-                prompt = build_llm_prompt(user_query, table_str)
-                prompts_used["Gemini (gemini-2.5-flash)"] = prompt
-                print("\nCalling Gemini...\n")
-                print(prompt)
-                print("===================================")
+                
 
                 start = time.time()
 
                 info = gemini_client.models.generate_content(
                     model="gemini-2.5-flash",
-                    contents=prompt,
+                    contents=prompt_used,
                 )
 
                 end = time.time()
@@ -312,7 +304,7 @@ def run_models_for_query(
             "raw_results": combined_rows,
             "table_str": table_str,
             "models": models_output,
-            "prompts_used": prompts_used,   # ✅ NEW
+            "prompt_used": prompt_used,   # ✅ NEW
         }
 
     finally:
