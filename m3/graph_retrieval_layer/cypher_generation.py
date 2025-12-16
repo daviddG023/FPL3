@@ -266,26 +266,36 @@ def run_models_for_query(
 
         if "Gemini" in models_to_run:
             try:
-                
-
                 start = time.time()
 
                 info = gemini_client.models.generate_content(
                     model="gemini-2.5-flash",
                     contents=prompt_used,
                 )
+                usage = info.usage_metadata
+                response_time = time.time() - start
+                print(usage)
+                prompt_tokens = getattr(usage, "prompt_token_count", None)
+                completion_tokens = getattr(usage, "candidates_token_count", None)
+                total_tokens = getattr(usage, "total_token_count", None)
 
-                end = time.time()
-                response_time = round(end - start, 4)
+                # cost only if we actually got usage numbers
+                cost_usd = None
+                if prompt_tokens is not None and completion_tokens is not None:
+                    cost_usd = (
+                        (prompt_tokens / 1_000_000) * 0.35 +
+                        (completion_tokens / 1_000_000) * 1.05
+                    )
 
                 models_output["Gemini (gemini-2.5-flash)"] = {
                     "answer": info.text,
                     "response_time": response_time,
-                    "prompt_tokens": None,
-                    "completion_tokens": None,
-                    "total_tokens": None,
-                    "cost_usd": None,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,   # <-- mapped correctly
+                    "total_tokens": total_tokens,
+                    "cost_usd": cost_usd,
                 }
+
 
             except Exception as e:
                 models_output["Gemini (gemini-2.5-flash)"] = {"error": str(e)}
