@@ -294,11 +294,11 @@ def main():
             emb_model_key = "minilm" if emb_label.startswith("MiniLM") else "mpnet"
 
         st.header("🤖 LLM Model Selection")
-        model_choices = ["GPT-40-mini", "GPT-3.5", "GPT-40", "Gemini"]
+        model_choices = ["GPT-4o-mini", "GPT-3.5", "GPT-4o", "Gemini"]
         selected_models = st.multiselect(
             "Choose LLMs to run",
             model_choices,
-            default=["GPT-40-mini", "GPT-3.5", "GPT-40", "Gemini"],
+            default=["GPT-4o-mini", "GPT-3.5", "GPT-4o", "Gemini"],
         )
 
         st.header("📝 Query History")
