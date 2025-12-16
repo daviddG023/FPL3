@@ -63,12 +63,49 @@ def load_config():
         return {}
 
 
-def format_results_as_dataframe(results: list) -> pd.DataFrame:
-    """Convert query results to a pandas DataFrame for better display"""
-    if not results:
+def format_results_as_dataframe(results):
+    """
+    Accepts either:
+      1) List[Dict] rows  -> normal DataFrame
+      2) Dict with keys {"baseline": [...], "embeddings": [...]} -> stacked DataFrame with a 'source' column
+    """
+    import pandas as pd
+
+    if results is None:
         return pd.DataFrame()
-    
-    return pd.DataFrame(results)
+
+    # Case 1: already list of row dicts
+    if isinstance(results, list):
+        if not results:
+            return pd.DataFrame()
+        return pd.DataFrame(results)
+
+    # Case 2: hybrid structure dict
+    if isinstance(results, dict):
+        frames = []
+
+        baseline = results.get("baseline") or []
+        embeddings = results.get("embeddings") or []
+
+        if baseline:
+            df_b = pd.DataFrame(baseline)
+            df_b.insert(0, "source", "baseline")
+            frames.append(df_b)
+
+        if embeddings:
+            df_e = pd.DataFrame(embeddings)
+            df_e.insert(0, "source", "embeddings")
+            frames.append(df_e)
+
+        if not frames:
+            return pd.DataFrame()
+
+        # stack them (different schemas are fine)
+        return pd.concat(frames, ignore_index=True, sort=False)
+
+    # Unknown type
+    return pd.DataFrame()
+
 
 
 def format_results_text(results: list, query_name: str) -> str:
@@ -442,7 +479,8 @@ def main():
             else:
                 baseline_rows = result.get("baseline_results") or []
                 emb_rows = result.get("embedding_results") or []
-                combined_rows = result.get("raw_results") or []
+                combined_rows = result.get("raw_results") or {}
+
 
                 tab_ctx, tab_models = st.tabs(
                     ["KG / Embedding Context", "Model Answers"]
@@ -457,10 +495,18 @@ def main():
                         st.info("No combined context rows.")
 
                     # Small summary
+                    # count combined rows correctly (works for list or dict)
+                    if isinstance(combined_rows, list):
+                        combined_count = len(combined_rows)
+                    elif isinstance(combined_rows, dict):
+                        combined_count = len(combined_rows.get("baseline") or []) + len(combined_rows.get("embeddings") or [])
+                    else:
+                        combined_count = 0
+
                     st.markdown(
                         f"- Baseline rows: **{len(baseline_rows)}**  \n"
                         f"- Embedding rows: **{len(emb_rows)}**  \n"
-                        f"- Combined rows (after de-dup): **{len(combined_rows)}**"
+                        f"- Combined rows: **{combined_count}**"
                     )
 
                     # Optional detailed views

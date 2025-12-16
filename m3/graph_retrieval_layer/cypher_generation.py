@@ -195,19 +195,16 @@ def run_models_for_query(
 
             for hit in hits:
                 embedding_rows.append(dict(hit["metadata"]))
+                
 
+        combined_rows = {
+            "baseline": baseline_results,
+            "embeddings": embedding_rows,
+        }
 
         # --- Merge context depending on method ---
-        if retrieval_method == "baseline":
-            combined_rows = list(baseline_results)
-        elif retrieval_method == "embeddings":
-            combined_rows = list(embedding_rows)
-        else:  # hybrid
-            combined_rows = _merge_and_dedup_rows(baseline_results, embedding_rows)
+        table_str = build_context_table(retrieval_method, baseline_results, embedding_rows)
 
-        table_str = (
-            format_results_table(combined_rows) if combined_rows else "No results found."
-        )
 
         # --- Run selected LLMs on the combined context ---
         models_output: Dict[str, Any] = {}
@@ -319,6 +316,39 @@ def run_models_for_query(
     finally:
         if retrieval is not None:
             retrieval.close()
+
+def build_context_table(
+    retrieval_method: str,
+    baseline_results: List[Dict[str, Any]],
+    embedding_rows: List[Dict[str, Any]],
+) -> str:
+    retrieval_method = retrieval_method.lower().strip()
+
+    if retrieval_method == "baseline":
+        return format_results_table(baseline_results) if baseline_results else "No baseline (Cypher) results found."
+
+    if retrieval_method == "embeddings":
+        return format_results_table(embedding_rows) if embedding_rows else "No embedding results found."
+
+    # hybrid
+    baseline_tbl = (
+        format_results_table(baseline_results)
+        if baseline_results
+        else "No baseline (Cypher) results found."
+    )
+    emb_tbl = (
+        format_results_table(embedding_rows)
+        if embedding_rows
+        else "No embedding results found."
+    )
+
+    return (
+        "BASELINE (Cypher summary)\n"
+        f"{baseline_tbl}\n\n"
+        "EMBEDDINGS (semantic per-row / per-GW evidence)\n"
+        f"{emb_tbl}"
+    )
+
 
 
 def build_llm_prompt(user_query: str, table_str: str) -> str:
